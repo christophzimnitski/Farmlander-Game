@@ -39,8 +39,8 @@ public class MainWindow {
     }
     
     public void setFullscreen() {
-        if (jframe.getExtendedState() == 6) {
-            device.setFullScreenWindow(jframe);
+        if (jframe.getExtendedState() == MAXIMIZED_BOTH) {
+            if(device.getFullScreenWindow() == null) device.setFullScreenWindow(jframe);
         }
     }
     public void unSetFullscreen() {
