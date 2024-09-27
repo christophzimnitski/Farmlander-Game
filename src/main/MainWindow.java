@@ -2,7 +2,6 @@ package main;
 
 import javax.swing.*;
 import java.awt.*;
-import static java.awt.Component.*;
 import static java.awt.Frame.*;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowFocusListener;
