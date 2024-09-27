@@ -38,12 +38,13 @@ public class MainWindow {
     }
     
     public void setFullscreen() {
-        if (jframe.getExtendedState() == MAXIMIZED_BOTH) {
-            if(device.getFullScreenWindow() == null) device.setFullScreenWindow(jframe);
+        if (jframe.getExtendedState() != MAXIMIZED_BOTH) {
+            device.setFullScreenWindow(jframe);
+            device.getFullScreenWindow().setVisible(true);
         }
     }
     public void unSetFullscreen() {
         device.setFullScreenWindow(null);
-        jframe.setLocation(-10, 0);
+        jframe.setLocation(0, 0);
     }
 }
