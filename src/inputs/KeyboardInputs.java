@@ -55,7 +55,7 @@ public class KeyboardInputs implements KeyListener {
                 //mainPanel.getLevel().getLevelManager().getCropsLayer().editLayer(MouseInfo.getPointerInfo().getLocation().x, MouseInfo.getPointerInfo().getLocation().y - 56 - 64, 1);
                 break;
             case KeyEvent.VK_9:
-                //mainPanel.getLevel().getLevelManager().getCollisionLayer().editLayer(MouseInfo.getPointerInfo().getLocation().x, MouseInfo.getPointerInfo().getLocation().y - 56, -80);
+                //mainPanel.getLevel().getLevelManager().getCollisionLayer().editLayer(MouseInfo.getPointerInfo().getLocation().x, MouseInfo.getPointerInfo().getLocation().y - 56, -80) ;
                 break;
         }
     }
