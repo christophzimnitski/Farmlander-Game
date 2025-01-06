@@ -5,28 +5,25 @@ import entities.Player;
 import levels.LevelManager;
 
 import java.awt.*;
-import java.util.Arrays;
 
 public class Level implements Runnable {
     public final static int TILES_DEFAULT_SIZE = 64;
     public final static float SCALE = 2.0f;
     public final static int TILES_IN_WIDTH = 200;
     public final static int TILES_IN_HEIGHT = 110;
-    public final static int TILE_SIZE = (int) (TILES_DEFAULT_SIZE * SCALE);
 
     public final static int GAME_WIDTH = Toolkit.getDefaultToolkit().getScreenSize().width;
-    public final static int GAME_HEIGHT = Toolkit.getDefaultToolkit().getScreenSize().height-110;
+    public final static int GAME_HEIGHT = Toolkit.getDefaultToolkit().getScreenSize().height;
 
     private final MainPanel mainPanel;
     private Player player;
     private LevelManager levelManager;
-    public MainWindow mainWindow;
 
     public Level() {
         initClasses();
 
         mainPanel = new MainPanel(this);
-        mainWindow = new MainWindow(mainPanel);
+        MainWindow mainWindow = new MainWindow(mainPanel);
         mainPanel.requestFocus();
 
         startGameLoop();
@@ -63,7 +60,6 @@ public class Level implements Runnable {
 
     public void update() {
         player.update();
-        mainWindow.setFullscreen();
     }
 
     public void render(Graphics g) {
@@ -133,10 +129,6 @@ public class Level implements Runnable {
 
     public Player getPlayer() {
         return player;
-    }
-    
-    public MainWindow getMainWindow() {
-        return mainWindow;
     }
 
     public LevelManager getLevelManager() {

@@ -10,7 +10,7 @@ import static utilz.Constants.Zoom.zoomMultiplier;
 public class Collisions {
     List<Rectangle2D> collideObjects = new ArrayList<>();
 
-    public Collisions(int[][] layer, int[] nonCollideList, double offset, double width, double height, double xOffset, double yOffset) {
+    public Collisions(int[][] layer, int[] nonCollideList, double width, double height, int xOffset, int yOffset) {
         for (int x = 0; x < layer.length; x++)
             for (int y = 0; y < layer[x].length; y++) {
                 int finalX = x;

@@ -1,6 +1,7 @@
 package levels;
 
 import main.Level;
+import org.jetbrains.annotations.NotNull;
 import utilz.LoadSave;
 
 import java.awt.*;
@@ -46,7 +47,7 @@ public class CollisionLayer implements LayerInterface, Serializable {
     }
 
     @Override
-    public void numberTiles(BufferedImage [][][] tileSets, Dictionary<Integer, BufferedImage> layerDictionary) {
+    public void numberTiles(@NotNull BufferedImage @NotNull [][][] tileSets, Dictionary<Integer, BufferedImage> layerDictionary) {
         LayerInterface.super.numberTiles(tileSets, layerDictionary);
     }
 

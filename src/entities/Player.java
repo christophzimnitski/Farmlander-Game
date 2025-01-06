@@ -1,6 +1,7 @@
 package entities;
 
 import levels.LevelManager;
+import org.jetbrains.annotations.NotNull;
 import utilz.LoadSave;
 
 import java.awt.*;
@@ -13,82 +14,38 @@ import static utilz.Constants.InventoryConstants.Watermelon;
 import static utilz.Constants.PlayerActionConstants.*;
 import static utilz.Constants.Zoom.zoomMultiplier;
 
-public class Player extends Entity {
+public class Player extends MovableEntity {
     //BUGS: Tiles connect more than needed with one till --> add extra check for edge blocks
     //      Overlays for player and collidables create extra shadow --> make logic if statements in the main draw function for y positions
 
     public Inventory inventory = new Inventory(10);
     float playerWidth = (int) ((32 * 5) * zoomMultiplier), playerHeight = (int) ((32 * 5) * zoomMultiplier);
-    int animationSelectionNumber = 0;
     float playerSpeed = 1.25f * zoomMultiplier;
     int currentIndex;
     int toolAnimationIndex = 0;
-    String direction = "Right";
-    Rectangle2D hitbox = new Rectangle2D() {
-        @Override
-        public void setRect(double x, double y, double w, double h) {
 
-        }
-
-        @Override
-        public int outcode(double x, double y) {
-            return 0;
-        }
-
-        @Override
-        public Rectangle2D createIntersection(Rectangle2D r) {
-            Rectangle2D intersection = new Rectangle2D.Double();
-            Rectangle2D.intersect(this, r, intersection);
-
-            // If the intersection is not empty, return it; otherwise, return null
-            if (!intersection.isEmpty()) {
-                return intersection;
-            } else {
-                return null;
-            }
-        }
-
-        @Override
-        public Rectangle2D createUnion(Rectangle2D r) {
-            return null;
-        }
-
-        @Override
-        public double getX() {
-            return (x + (50 * zoomMultiplier));
-        }
-
-        @Override
-        public double getY() {
-            return (y + (130 * zoomMultiplier));
-        }
-
-        @Override
-        public double getWidth() {
-            return (60 * zoomMultiplier);
-        }
-
-        @Override
-        public double getHeight() {
-            return (32 * zoomMultiplier);
-        }
-
-        @Override
-        public boolean isEmpty() {
-            return false;
-        }
-    };
     Object[] loadedObjects = LevelManager.loadObjects("objects.dat").toArray();
-    Collisions collisionsForLayer;
-    private LevelManager levelManager;
     private BufferedImage[][] animations;
     private BufferedImage[][] wideAnimations;
-    private int animationTick, animationIndex;
-    private int playerAction = WALK_DOWN;
     private boolean moving = false, weapon = false;
-    private boolean up, left, down, right;    int[] selectedAnimationArray = setAnimationArrays(animationSelectionNumber);
+    private boolean up, left, down, right;
+
+
     public Player(float x, float y) {
         super(x, y);
+
+        hitbox = initPlayerHitbox();
+        entityAction = WALK_DOWN;
+        movingDirection = "Down";
+        animationSelectionNumber = 0;
+        selectedAnimationArray = new int[]{WALK_UP, WALK_LEFT, WALK_DOWN, WALK_RIGHT};
+        animationArrays = new int[][]{{WALK_UP, WALK_LEFT, WALK_DOWN, WALK_RIGHT},
+                {WALK_CHOPPING_UP, WALK_CHOPPING_LEFT, WALK_CHOPPING_DOWN, WALK_CHOPPING_RIGHT},
+                {WALK_MINING_UP, WALK_MINING_LEFT, WALK_MINING_DOWN, WALK_MINING_RIGHT},
+                {WALK_WATERING_UP, WALK_WATERING_LEFT, WALK_WATERING_DOWN, WALK_WATERING_RIGHT},
+                {WALK_TILLING_UP, WALK_TILLING_LEFT, WALK_TILLING_DOWN, WALK_TILLING_RIGHT},
+                {WALK_DIGGING_UP, WALK_DIGGING_LEFT, WALK_DIGGING_DOWN, WALK_DIGGING_RIGHT}};
+
         loadAnimations();
         try {
             setInventory((Inventory) loadedObjects[5]);
@@ -109,6 +66,63 @@ public class Player extends Entity {
         System.out.println(Arrays.toString(inventory.getInventoryAmounts()));
     }
 
+    private @NotNull Rectangle2D initPlayerHitbox() {
+        return new Rectangle2D() {
+            @Override
+            public void setRect(double x, double y, double w, double h) {
+
+            }
+
+            @Override
+            public int outcode(double x, double y) {
+                return 0;
+            }
+
+            @Override
+            public Rectangle2D createIntersection(Rectangle2D r) {
+                Rectangle2D intersection = new Rectangle2D.Double();
+                Rectangle2D.intersect(this, r, intersection);
+
+                // If the intersection is not empty, return it; otherwise, return null
+                if (!intersection.isEmpty()) {
+                    return intersection;
+                } else {
+                    return null;
+                }
+            }
+
+            @Override
+            public Rectangle2D createUnion(Rectangle2D r) {
+                return null;
+            }
+
+            @Override
+            public double getX() {
+                return (Player.super.x + (50 * zoomMultiplier));
+            }
+
+            @Override
+            public double getY() {
+                return (Player.super.y + (130 * zoomMultiplier));
+            }
+
+            @Override
+            public double getWidth() {
+                return (60 * zoomMultiplier);
+            }
+
+            @Override
+            public double getHeight() {
+                return (32 * zoomMultiplier);
+            }
+
+            @Override
+            public boolean isEmpty() {
+                return false;
+            }
+        };
+    }
+
     public void addInventoryItem(int spot, int amount, int item) {
         inventory.addInventoryItem(spot, amount, item);
     }
@@ -117,84 +131,15 @@ public class Player extends Entity {
         inventory.removeInventoryItem(spot, amount);
     }
 
-    public void checkCollision(int[][] layer, int[] nonCollidables, double offset, double x, double y, double width, double height) {
-        if (levelManager != null) {
-
-            collisionsForLayer = new Collisions(layer, nonCollidables, offset * zoomMultiplier, width, height, x, y);
-
-            for (int i = 0; i < collisionsForLayer.collideObjects.size(); i++) {
-
-                if (collisionsForLayer.collideObjects.get(i).intersects(hitbox)) {
-
-                    Rectangle2D intersection = hitbox.createIntersection(collisionsForLayer.collideObjects.get(i));
-
-                    if (intersection.getWidth() > intersection.getHeight() + (0.3 * zoomMultiplier)) {
-                        if (intersection.getY() > hitbox.getY()) {
-                            this.y -= (float) (intersection.getHeight());
-                        } else {
-                            this.y += (float) (intersection.getHeight());
-                        }
-                    }
-                    if (intersection.getHeight() > intersection.getWidth() + (0.3 * zoomMultiplier)) {
-                        if (intersection.getX() > hitbox.getX()) {
-                            this.x -= (float) (intersection.getWidth());
-                        } else {
-                            this.x += (float) (intersection.getWidth());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /*public void checkCollisionAgain(int[][] layer, int[] nonCollidables, double offset, double x, double y, double width, double height) {
-        if (levelManager != null) {
-
-            collisionsForLayer = new Collisions(layer, nonCollidables, offset * zoomMultiplier, width, height, x, y);
-
-            for (int i = 0; i < collisionsForLayer.collideObjects.size(); i++) {
-
-                if (collisionsForLayer.collideObjects.get(i).intersects(hitbox)) {
-
-                    System.out.println(hitbox.createIntersection(collisionsForLayer.collideObjects.get(i)));
-
-                    Rectangle2D intersection = collisionsForLayer.collideObjects.get(i);
-
-                    double overlapLeft = hitbox.getMaxX() - intersection.getX();
-                    double overlapRight = intersection.getMaxX() - hitbox.getX();
-                    double overlapTop = hitbox.getMaxY() - intersection.getY();
-                    double overlapBottom = intersection.getMaxY() - hitbox.getY();
-
-                    double hitboxOffset = hitbox.getWidth()- getHitbox().getHeight()+0.001;
-                    double maxOverlap = height + hitbox.getHeight() - (0.5*zoomMultiplier);
-                    //System.out.println("Left: " + overlapLeft + " Right: " + overlapRight + " Top: " + overlapTop + " Bottom " + overlapBottom);
-
-                    if (overlapTop > overlapBottom && (overlapTop - overlapBottom) >= (overlapRight - overlapLeft - hitboxOffset) && (overlapTop - overlapBottom) >= (overlapLeft - overlapRight - hitboxOffset)) {
-                        this.y = (float) ((intersection.getMaxY() - (130 * zoomMultiplier)) + (0.75*zoomMultiplier));
-                    }
-                    if (overlapBottom > overlapTop && (overlapBottom - overlapTop) >= (overlapRight - overlapLeft - hitboxOffset) && (overlapBottom - overlapTop) >= (overlapLeft - overlapRight - hitboxOffset)) {
-                        this.y = (float) ((intersection.getY() - hitbox.getHeight() - (130 * zoomMultiplier)) - (0.75*zoomMultiplier));
-                    }
-                    if (overlapRight > overlapLeft && (overlapRight - overlapLeft) > (overlapBottom - overlapTop + hitboxOffset) && (overlapRight - overlapLeft) > (overlapTop - overlapBottom + hitboxOffset) && overlapBottom <= maxOverlap && overlapTop <= maxOverlap) {
-                        this.x = (float) ((intersection.getX() - hitbox.getWidth() - (50 * zoomMultiplier)) - (1*zoomMultiplier));
-                    }
-                    if (overlapLeft > overlapRight && (overlapLeft - overlapRight) > (overlapBottom - overlapTop + hitboxOffset) && (overlapLeft - overlapRight) > (overlapTop - overlapBottom + hitboxOffset) && overlapBottom <= maxOverlap && overlapTop <= maxOverlap) {
-                        this.x = (float) ((intersection.getMaxX() - (50 * zoomMultiplier)) + (1*zoomMultiplier));
-                    }
-                }
-            }
-        }
-    }*/
-
     public void update() {
-        moving = isMoving();
+        moving = shouldIMove();
         updateAnimationTick();
         setAnimation();
         checkAllCollisions();
     }
 
     public void render(Graphics g, float offsetX, float offsetY) {
-        g.drawImage(animations[playerAction][animationIndex], (int) x - (int) offsetX, (int) y - (int) offsetY, (int) ((32 * 5) * zoomMultiplier), (int) ((32 * 5) * zoomMultiplier), null);
+        g.drawImage(animations[this.entityAction][animationIndex], (int) x - (int) offsetX, (int) y - (int) offsetY, (int) ((32 * 5) * zoomMultiplier), (int) ((32 * 5) * zoomMultiplier), null);
 
         /*for (int x = 0; x < levelManager.getCollisionLayer().getLayerArray().length; x++)
             for (int y = 0; y < levelManager.getCollisionLayer().getLayerArray()[x].length; y++) {
@@ -207,36 +152,30 @@ public class Player extends Entity {
         //g.drawRect((int) hitbox.getX(), (int) hitbox.getY(), (int) hitbox.getWidth(), (int) hitbox.getHeight());
     }
 
-    private void checkAllCollisions() {
-        if (levelManager != null) {
-            checkCollision(levelManager.getCollisionLayer().getLayerArray(), new int[]{7, 8, 9, 25, 26, 27, 43, 44, 45}, 0, 0, 0, 64 * zoomMultiplier, 64 * zoomMultiplier);
-            checkCollision(levelManager.getCropsLayer().getLayerArray(), new int[]{0, 5, 6, 10, 11, 15, 16, 20, 25, 26, 30, 31, 35, 36, 40, 41, 45, 50, 51, 55, 60, 61, 65, 66, 70, 71, 75, 76, 80, 81, 85, 170, 175, 201, 205, 210, 215, 220, 231, 236, 237, 240, 245, 246, 251, 256, 261, 291, 296, 301}, 0, (32 + 16), (80 + 40), 32 * zoomMultiplier, 24 * zoomMultiplier);
-        }
-    }
-
     private void setAnimation() {
 
-        int startingAction = playerAction;
-        if (moving && !weapon) {
+        int startingAction = this.entityAction;
+
+        if (moving) {
             if (up) {
-                playerAction = selectedAnimationArray[0];
-                direction = "Up";
+                this.entityAction = selectedAnimationArray[0];
+                this.movingDirection = "Up";
             }
             if (down) {
-                playerAction = selectedAnimationArray[2];
-                direction = "Down";
+                this.entityAction = selectedAnimationArray[2];
+                this.movingDirection = "Down";
             }
             if (left) {
-                playerAction = selectedAnimationArray[1];
-                direction = "Left";
+                this.entityAction = selectedAnimationArray[1];
+                this.movingDirection = "Left";
             }
             if (right) {
-                playerAction = selectedAnimationArray[3];
-                direction = "Right";
+                this.entityAction = selectedAnimationArray[3];
+                this.movingDirection = "Right";
             }
         }
 
-        boolean startingActionChanged = startingAction != playerAction;
+        boolean startingActionChanged = startingAction != this.entityAction;
 
         if (startingActionChanged) {
             resetAniTick();
@@ -244,43 +183,9 @@ public class Player extends Entity {
 
     }
 
-    public int[] setAnimationArrays(int change) {
-        animationSelectionNumber += change;
-        int[][] animationArrays = {{WALK_UP, WALK_LEFT, WALK_DOWN, WALK_RIGHT},
-                {WALK_CHOPPING_UP, WALK_CHOPPING_LEFT, WALK_CHOPPING_DOWN, WALK_CHOPPING_RIGHT},
-                {WALK_MINING_UP, WALK_MINING_LEFT, WALK_MINING_DOWN, WALK_MINING_RIGHT},
-                {WALK_WATERING_UP, WALK_WATERING_LEFT, WALK_WATERING_DOWN, WALK_WATERING_RIGHT},
-                {WALK_TILLING_UP, WALK_TILLING_LEFT, WALK_TILLING_DOWN, WALK_TILLING_RIGHT},
-                {WALK_DIGGING_UP, WALK_DIGGING_LEFT, WALK_DIGGING_DOWN, WALK_DIGGING_RIGHT}};
-
-        if (animationSelectionNumber >= animationArrays.length) {
-            animationSelectionNumber = 0;
-        }
-
-        this.selectedAnimationArray = animationArrays[animationSelectionNumber];
-
-        if (Objects.equals(direction, "Up")) {
-            playerAction = selectedAnimationArray[0];
-            direction = "Up";
-        }
-        if (Objects.equals(direction, "Down")) {
-            playerAction = selectedAnimationArray[2];
-            direction = "Down";
-        }
-        if (Objects.equals(direction, "Left")) {
-            playerAction = selectedAnimationArray[1];
-            direction = "Left";
-        }
-        if (Objects.equals(direction, "Right")) {
-            playerAction = selectedAnimationArray[3];
-            direction = "Right";
-        }
-
-        return animationArrays[animationSelectionNumber];
-    }
 
     public int getAttackAnimation(int incomingAction) {
-        switch (incomingAction) {
+        return switch (incomingAction) {
             case WALK_UP:
             case WALK_LEFT:
             case WALK_DOWN:
@@ -290,7 +195,7 @@ public class Player extends Entity {
             case WALK_CHOPPING_DOWN:
             case WALK_CHOPPING_RIGHT:
                 weapon = false;
-                return incomingAction;
+                yield incomingAction;
 
             case WATERING_UP:
             case WATERING_LEFT:
@@ -309,66 +214,59 @@ public class Player extends Entity {
             case MINE_DOWN:
             case MINE_RIGHT:
                 weapon = true;
-                return incomingAction;
+                yield incomingAction;
 
             case WALK_WATERING_UP:
                 weapon = true;
-                return WATERING_UP;
+                yield WATERING_UP;
             case WALK_WATERING_LEFT:
                 weapon = true;
-                return WATERING_LEFT;
+                yield WATERING_LEFT;
             case WALK_WATERING_DOWN:
                 weapon = true;
-                return WATERING_DOWN;
+                yield WATERING_DOWN;
             case WALK_WATERING_RIGHT:
                 weapon = true;
-                return WATERING_RIGHT;
+                yield WATERING_RIGHT;
             case WALK_TILLING_UP:
                 weapon = true;
-                return TILLING_UP;
+                yield TILLING_UP;
             case WALK_TILLING_LEFT:
                 weapon = true;
-                return TILLING_LEFT;
+                yield TILLING_LEFT;
             case WALK_TILLING_DOWN:
                 weapon = true;
-                return TILLING_DOWN;
+                yield TILLING_DOWN;
             case WALK_TILLING_RIGHT:
                 weapon = true;
-                return TILLING_RIGHT;
+                yield TILLING_RIGHT;
             case WALK_DIGGING_UP:
                 weapon = true;
-                return DIGGING_UP;
+                yield DIGGING_UP;
             case WALK_DIGGING_LEFT:
                 weapon = true;
-                return DIGGING_LEFT;
+                yield DIGGING_LEFT;
             case WALK_DIGGING_DOWN:
                 weapon = true;
-                return DIGGING_DOWN;
+                yield DIGGING_DOWN;
             case WALK_DIGGING_RIGHT:
                 weapon = true;
-                return DIGGING_RIGHT;
+                yield DIGGING_RIGHT;
             case WALK_MINING_UP:
                 weapon = true;
-                return MINE_UP;
+                yield MINE_UP;
             case WALK_MINING_LEFT:
                 weapon = true;
-                return MINE_LEFT;
+                yield MINE_LEFT;
             case WALK_MINING_DOWN:
                 weapon = true;
-                return MINE_DOWN;
+                yield MINE_DOWN;
             case WALK_MINING_RIGHT:
                 weapon = true;
-                return MINE_RIGHT;
-
+                yield MINE_RIGHT;
             default:
                 throw new IllegalStateException("Unexpected value: " + incomingAction);
-        }
-    }
-
-
-    private void resetAniTick() {
-        animationTick = 0;
-        animationIndex = 0;
+        };
     }
 
     private void updateAnimationTick() {
@@ -377,39 +275,40 @@ public class Player extends Entity {
         int firstFrameOfAnimation = 0;
         int secondFrameOfAnimation = 1;
 
-        if (animationTick >= aniSpeed && !weapon) {
+        if (animationIndex == 0 && moving) animationIndex = 1;
 
+        if (animationTick >= aniSpeed && !weapon) {
             animationTick = 0;
             animationIndex++;
             if (!moving) {
                 animationIndex = firstFrameOfAnimation;
-            } else if (animationIndex >= GetSpritesInAction(playerAction)) {
-                if (GetSpritesInAction(playerAction) == 9)
+            } else if (animationIndex >= GetSpritesInAction(this.entityAction)) {
+                if (GetSpritesInAction(this.entityAction) == 9)
                     animationIndex = secondFrameOfAnimation;
-                if (GetSpritesInAction(playerAction) == 8)
+                if (GetSpritesInAction(this.entityAction) == 8)
                     animationIndex = firstFrameOfAnimation;
-                if (GetSpritesInAction(playerAction) == 4)
+                if (GetSpritesInAction(this.entityAction) == 4)
                     animationIndex = firstFrameOfAnimation;
             }
             currentIndex = animationIndex;
 
         }
         if (animationTick >= aniSpeed) {
-            int startAni = playerAction;
+            int startAni = this.entityAction;
 
-            playerAction = getAttackAnimation(playerAction);
+            this.entityAction = getAttackAnimation(this.entityAction);
 
             animationTick = 0;
-            if (GetSpritesInAction(playerAction) != 9) {
+            if (GetSpritesInAction(this.entityAction) != 9) {
                 animationIndex = toolAnimationIndex;
 
                 useTool(animationSelectionNumber, toolAnimationIndex);
 
                 toolAnimationIndex++;
             }
-            if (GetSpritesInAction(playerAction) == 9) animationIndex = currentIndex;
+            if (GetSpritesInAction(this.entityAction) == 9) animationIndex = currentIndex;
             if (toolAnimationIndex >= 8) {
-                playerAction = startAni;
+                this.entityAction = startAni;
                 weapon = false;
                 toolAnimationIndex = firstFrameOfAnimation;
                 animationIndex = firstFrameOfAnimation;
@@ -419,13 +318,13 @@ public class Player extends Entity {
 
     public void useTool(int toolChoice, int toolAnimationIndex) {
         if (getUseToolValues("Hoe", toolChoice, toolAnimationIndex)) {
-            if (Objects.equals(direction, "Right"))
+            if (Objects.equals(this.movingDirection, "Right"))
                 levelManager.getPlantingLayer().editLayer((int) x + (int) (122 * zoomMultiplier), (int) y + (int) (104 * zoomMultiplier), 400);
-            if (Objects.equals(direction, "Down"))
+            if (Objects.equals(this.movingDirection, "Down"))
                 levelManager.getPlantingLayer().editLayer((int) x + (int) (47 * zoomMultiplier), (int) y + (int) ((32 * 4) * zoomMultiplier), 400);
-            if (Objects.equals(direction, "Up"))
+            if (Objects.equals(this.movingDirection, "Up"))
                 levelManager.getPlantingLayer().editLayer((int) x + (int) (47 * zoomMultiplier), (int) y + (int) (32 * zoomMultiplier), 400);
-            if (Objects.equals(direction, "Left"))
+            if (Objects.equals(this.movingDirection, "Left"))
                 levelManager.getPlantingLayer().editLayer((int) x - (int) (28 * zoomMultiplier), (int) y + (int) (104 * zoomMultiplier), 400);
         }
     }
@@ -436,7 +335,7 @@ public class Player extends Entity {
         } else return false;
     }
 
-    private boolean isMoving() {
+    private boolean shouldIMove() {
 
         if (weapon) return false;
 
@@ -480,7 +379,7 @@ public class Player extends Entity {
 
     }
 
-    private void loadAnimations() {
+    protected void loadAnimations() {
         BufferedImage img = LoadSave.GetSpriteAtlas(LoadSave.PLAYER_ATLAS);
 
         animations = new BufferedImage[36][9];
@@ -522,10 +421,6 @@ public class Player extends Entity {
         this.right = right;
     }
 
-    public void setLevelManager(LevelManager levelManager) {
-        this.levelManager = levelManager;
-    }
-
     public Rectangle2D getHitbox() {
         return hitbox;
     }
@@ -541,7 +436,13 @@ public class Player extends Entity {
     public float getPlayerWidth() {
         return playerWidth;
     }
+
     public float getPlayerHeight() {
         return playerHeight;
     }
+
+    public boolean getMovementConditionals() {
+        return this.shouldIMove();
+    }
+
 }

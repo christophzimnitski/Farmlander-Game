@@ -1,6 +1,7 @@
 package levels;
 
 import main.Level;
+import org.jetbrains.annotations.NotNull;
 import utilz.LoadSave;
 
 import javax.swing.*;
@@ -15,6 +16,8 @@ import java.util.stream.IntStream;
 import static utilz.Constants.Zoom.zoomMultiplier;
 
 public class CropsLayer implements LayerInterface, Serializable {
+    ///ERROR WHEN TILLING 4 blocks and another 4 from 2 away, they merge instead of being separate blobs
+
     private final Level level;
     int[][] layerArray = new int[40][22];
     Dictionary<Integer, BufferedImage> layerDictionary = new Hashtable<>();
@@ -300,7 +303,7 @@ public class CropsLayer implements LayerInterface, Serializable {
         }));
     }
 
-  
+    @NotNull
     private Timer getTimer(int x, int y, int timeCount) {
         ActionListener taskPerformer = evt -> {
             //System.out.println("Timer Working");
@@ -317,7 +320,7 @@ public class CropsLayer implements LayerInterface, Serializable {
     }
 
     @Override
-    public void numberTiles(BufferedImage[][][] tileSets, Dictionary<Integer, BufferedImage> layerDictionary) {
+    public void numberTiles(@NotNull BufferedImage[][][] tileSets, Dictionary<Integer, BufferedImage> layerDictionary) {
         LayerInterface.super.numberTiles(this.tileSets, this.layerDictionary);
     }
 

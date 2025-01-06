@@ -1,5 +1,7 @@
 package levels;
 
+import org.jetbrains.annotations.NotNull;
+
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.util.Dictionary;
@@ -13,7 +15,7 @@ public interface LayerInterface {
                 g.drawImage(layerDictionary.get(layerArray[j][i]), j * (int) (64 * zoomMultiplier) - (int) offsetX, i * (int) (64 * zoomMultiplier) - (int) offsetY, (int) (64 * zoomMultiplier), (int) (64 * zoomMultiplier), null);
     }
 
-    default void numberTiles(BufferedImage[][][] tileSets, Dictionary<Integer, BufferedImage> layerDictionary) {
+    default void numberTiles(@NotNull BufferedImage[][][] tileSets, Dictionary<Integer, BufferedImage> layerDictionary) {
         int count = 0;
         for (BufferedImage[][] tileSet : tileSets)
             for (BufferedImage[] bufferedImages : tileSet)

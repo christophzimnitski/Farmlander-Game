@@ -2,26 +2,23 @@ package main;
 
 import javax.swing.*;
 import java.awt.*;
-import static java.awt.Frame.*;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowFocusListener;
 
 public class MainWindow {
-    JFrame jframe = new JFrame();
-    GraphicsEnvironment graphics = GraphicsEnvironment.getLocalGraphicsEnvironment();
-    GraphicsDevice device = graphics.getDefaultScreenDevice();
-    
+
     public MainWindow(MainPanel mainPanel) {
+
+        JFrame jframe = new JFrame();
 
         jframe.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         jframe.add(mainPanel);
-        jframe.setLocation(-10,0);
+        jframe.setLocationRelativeTo(null);
         jframe.setResizable(true);
-        jframe.setTitle("Farmlander");
+        jframe.setName("Main Window");
         jframe.setIconImage(Toolkit.getDefaultToolkit().getImage(MainWindow.class.getResource("Icon.png")));
         jframe.pack();
         jframe.setVisible(true);
-        
 
         jframe.addWindowFocusListener(new WindowFocusListener() {
             @Override
@@ -35,16 +32,5 @@ public class MainWindow {
             }
         });
 
-    }
-    
-    public void setFullscreen() {
-        if (jframe.getExtendedState() != MAXIMIZED_BOTH) {
-            device.setFullScreenWindow(jframe);
-            device.getFullScreenWindow().setVisible(true);
-        }
-    }
-    public void unSetFullscreen() {
-        device.setFullScreenWindow(null);
-        jframe.setLocation(0, 0);
     }
 }
