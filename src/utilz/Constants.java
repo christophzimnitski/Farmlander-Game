@@ -1,5 +1,8 @@
 package utilz;
 
+import static utilz.Constants.PlayerActionConstants.*;
+import static utilz.Constants.PlayerActionConstants.WALK_DIGGING_RIGHT;
+
 public class Constants {
     public static class Zoom {
         public static float zoomMultiplier = 1.5f;
@@ -16,8 +19,8 @@ public class Constants {
         public static final int GoldPotato = 101;
         public static final int PurplePotato = 102;
         public static final int SweetPotato = 103;
-        public static final int Cassava = 104;
-        public static final int DaikonRadish = 105;
+        public static final int Cassava = 104;//MISSING
+        public static final int DaikonRadish = 105;//MISSING
         public static final int Carrot = 106;
         public static final int Parsnip = 107;
         public static final int Radish = 108;
@@ -46,27 +49,27 @@ public class Constants {
         public static final int Maize = 132;
         public static final int Asparagus = 133;
         public static final int Rhubarb = 134;
-        public static final int RomaineLettuce = 135;
+        public static final int RomaineLettuce = 135;//MISSING
         public static final int IcebergLettuce = 136;
-        public static final int Kale = 137;
+        public static final int Kale = 137;//MISSING
         public static final int RedCabbage = 138;
         public static final int Cabbage = 139;
         public static final int Celery = 140;
         public static final int BokChoy = 141;
         public static final int FennelBulb = 142;
-        public static final int BrusselsSprouts = 143;
+        public static final int BrusselsSprouts = 143;//MISSING
         public static final int Cauliflower = 144;
         public static final int Broccoli = 145;
         public static final int Artichoke = 146;
         public static final int Leek = 147;
         public static final int Kohlrabi = 148;
         public static final int Eggplant = 149;
-        public static final int Zucchini = 150;
+        public static final int Zucchini = 150;//MISSING
         public static final int YellowSquash = 151;
         public static final int Cucumber = 152;
         public static final int Strawberry = 153;
         public static final int Blackberry = 154;
-        public static final int Raspberry = 156;
+        public static final int Raspberry = 156;//MISSING
         public static final int Blueberry = 157;
         public static final int Grapes = 158;
         public static final int GreenGrapes = 159;
@@ -74,7 +77,7 @@ public class Constants {
         public static final int Tomato = 161;
         public static final int LargeTomato = 162;
         public static final int Peas = 163;
-        public static final int Hops = 164;
+        public static final int Hops = 164;//MISSING
         public static final int GreenBeans = 165;
         public static final int Coffee = 166;
         public static final int Pineapple = 167;
@@ -82,6 +85,8 @@ public class Constants {
     }
 
     public static class PlayerActionConstants {
+
+
         public static final int TILLING_UP = 0;
         public static final int TILLING_LEFT = 1;
         public static final int TILLING_DOWN = 2;
@@ -124,53 +129,25 @@ public class Constants {
         public static final int MINE_RIGHT = 39;
 
         public static int GetSpritesInAction(int player_action) {
-            switch (player_action) {
-
-                case WATERING_UP:
-                case WATERING_LEFT:
-                case WATERING_DOWN:
-                case WATERING_RIGHT:
-                    return 4;
-                case TILLING_UP:
-                case TILLING_LEFT:
-                case TILLING_DOWN:
-                case TILLING_RIGHT:
-                case DIGGING_UP:
-                case DIGGING_LEFT:
-                case DIGGING_DOWN:
-                case DIGGING_RIGHT:
-                    return 8;
-                case WALK_MINING_UP:
-                case WALK_MINING_LEFT:
-                case WALK_MINING_DOWN:
-                case WALK_MINING_RIGHT:
-                case WALK_TILLING_UP:
-                case WALK_TILLING_LEFT:
-                case WALK_TILLING_DOWN:
-                case WALK_TILLING_RIGHT:
-                case WALK_DIGGING_UP:
-                case WALK_DIGGING_LEFT:
-                case WALK_DIGGING_DOWN:
-                case WALK_DIGGING_RIGHT:
-                case WALK_WATERING_UP:
-                case WALK_WATERING_LEFT:
-                case WALK_WATERING_DOWN:
-                case WALK_WATERING_RIGHT:
-                case WALK_CHOPPING_UP:
-                case WALK_CHOPPING_LEFT:
-                case WALK_CHOPPING_DOWN:
-                case WALK_CHOPPING_RIGHT:
-                case WALK_UP:
-                case WALK_LEFT:
-                case WALK_DOWN:
-                case WALK_RIGHT:
-                    return 9;
-                default:
-                    return 2;
-
-
-            }
+            return switch (player_action) {
+                case WATERING_UP, WATERING_LEFT, WATERING_DOWN, WATERING_RIGHT -> 4;
+                case TILLING_UP, TILLING_LEFT, TILLING_DOWN, TILLING_RIGHT, DIGGING_UP, DIGGING_LEFT, DIGGING_DOWN,
+                     DIGGING_RIGHT -> 8;
+                case WALK_MINING_UP, WALK_MINING_LEFT, WALK_MINING_DOWN, WALK_MINING_RIGHT, WALK_TILLING_UP,
+                     WALK_TILLING_LEFT, WALK_TILLING_DOWN, WALK_TILLING_RIGHT, WALK_DIGGING_UP, WALK_DIGGING_LEFT,
+                     WALK_DIGGING_DOWN, WALK_DIGGING_RIGHT, WALK_WATERING_UP, WALK_WATERING_LEFT, WALK_WATERING_DOWN,
+                     WALK_WATERING_RIGHT, WALK_CHOPPING_UP, WALK_CHOPPING_LEFT, WALK_CHOPPING_DOWN, WALK_CHOPPING_RIGHT,
+                     WALK_UP, WALK_LEFT, WALK_DOWN, WALK_RIGHT -> 9;
+                default -> 2;
+            };
         }
+
+        public static final int[][] playerAnimationArrays = new int[][]{{WALK_UP, WALK_LEFT, WALK_DOWN, WALK_RIGHT},
+                {WALK_CHOPPING_UP, WALK_CHOPPING_LEFT, WALK_CHOPPING_DOWN, WALK_CHOPPING_RIGHT},
+                {WALK_MINING_UP, WALK_MINING_LEFT, WALK_MINING_DOWN, WALK_MINING_RIGHT},
+                {WALK_WATERING_UP, WALK_WATERING_LEFT, WALK_WATERING_DOWN, WALK_WATERING_RIGHT},
+                {WALK_TILLING_UP, WALK_TILLING_LEFT, WALK_TILLING_DOWN, WALK_TILLING_RIGHT},
+                {WALK_DIGGING_UP, WALK_DIGGING_LEFT, WALK_DIGGING_DOWN, WALK_DIGGING_RIGHT}};
     }
 
 }

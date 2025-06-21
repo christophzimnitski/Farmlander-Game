@@ -2,6 +2,7 @@ package entities;
 
 import levels.LevelManager;
 import org.jetbrains.annotations.NotNull;
+import utilz.Constants;
 import utilz.LoadSave;
 
 import java.awt.*;
@@ -10,6 +11,7 @@ import java.awt.image.BufferedImage;
 import java.util.Arrays;
 import java.util.Objects;
 
+import static utilz.Constants.InventoryConstants.Radish;
 import static utilz.Constants.InventoryConstants.Watermelon;
 import static utilz.Constants.PlayerActionConstants.*;
 import static utilz.Constants.Zoom.zoomMultiplier;
@@ -35,93 +37,25 @@ public class Player extends MovableEntity {
         super(x, y);
 
         hitbox = initPlayerHitbox();
-        entityAction = WALK_DOWN;
-        movingDirection = "Down";
-        animationSelectionNumber = 0;
-        selectedAnimationArray = new int[]{WALK_UP, WALK_LEFT, WALK_DOWN, WALK_RIGHT};
-        animationArrays = new int[][]{{WALK_UP, WALK_LEFT, WALK_DOWN, WALK_RIGHT},
-                {WALK_CHOPPING_UP, WALK_CHOPPING_LEFT, WALK_CHOPPING_DOWN, WALK_CHOPPING_RIGHT},
-                {WALK_MINING_UP, WALK_MINING_LEFT, WALK_MINING_DOWN, WALK_MINING_RIGHT},
-                {WALK_WATERING_UP, WALK_WATERING_LEFT, WALK_WATERING_DOWN, WALK_WATERING_RIGHT},
-                {WALK_TILLING_UP, WALK_TILLING_LEFT, WALK_TILLING_DOWN, WALK_TILLING_RIGHT},
-                {WALK_DIGGING_UP, WALK_DIGGING_LEFT, WALK_DIGGING_DOWN, WALK_DIGGING_RIGHT}};
+
+        animationArrays = playerAnimationArrays;
+        arraySelectionNumber = 0;
 
         loadAnimations();
+
         try {
             setInventory((Inventory) loadedObjects[5]);
             setX((Float) loadedObjects[6]);
             setY((Float) loadedObjects[7]);
-        } catch (Exception ignored) {
+            setSelectedAnimationArray((int[]) loadedObjects[8]);
+        } catch (Exception ignored) {}
 
-        }
+        entityAction = selectedAnimationArray[0];
 
-        inventory.addInventoryItem(1, 3, Watermelon);
-        System.out.println(Arrays.toString(inventory.getInventory()));
-        System.out.println(Arrays.toString(inventory.getInventoryAmounts()));
-        inventory.removeInventoryItem(1, 2);
-        System.out.println(Arrays.toString(inventory.getInventory()));
-        System.out.println(Arrays.toString(inventory.getInventoryAmounts()));
-        inventory.removeInventoryItem(1, 2);
         System.out.println(Arrays.toString(inventory.getInventory()));
         System.out.println(Arrays.toString(inventory.getInventoryAmounts()));
     }
 
-    private @NotNull Rectangle2D initPlayerHitbox() {
-        return new Rectangle2D() {
-            @Override
-            public void setRect(double x, double y, double w, double h) {
-
-            }
-
-            @Override
-            public int outcode(double x, double y) {
-                return 0;
-            }
-
-            @Override
-            public Rectangle2D createIntersection(Rectangle2D r) {
-                Rectangle2D intersection = new Rectangle2D.Double();
-                Rectangle2D.intersect(this, r, intersection);
-
-                // If the intersection is not empty, return it; otherwise, return null
-                if (!intersection.isEmpty()) {
-                    return intersection;
-                } else {
-                    return null;
-                }
-            }
-
-            @Override
-            public Rectangle2D createUnion(Rectangle2D r) {
-                return null;
-            }
-
-            @Override
-            public double getX() {
-                return (Player.super.x + (50 * zoomMultiplier));
-            }
-
-            @Override
-            public double getY() {
-                return (Player.super.y + (130 * zoomMultiplier));
-            }
-
-            @Override
-            public double getWidth() {
-                return (60 * zoomMultiplier);
-            }
-
-            @Override
-            public double getHeight() {
-                return (32 * zoomMultiplier);
-            }
-
-            @Override
-            public boolean isEmpty() {
-                return false;
-            }
-        };
-    }
 
     public void addInventoryItem(int spot, int amount, int item) {
         inventory.addInventoryItem(spot, amount, item);
@@ -182,7 +116,6 @@ public class Player extends MovableEntity {
         }
 
     }
-
 
     public int getAttackAnimation(int incomingAction) {
         return switch (incomingAction) {
@@ -299,14 +232,17 @@ public class Player extends MovableEntity {
             this.entityAction = getAttackAnimation(this.entityAction);
 
             animationTick = 0;
+
             if (GetSpritesInAction(this.entityAction) != 9) {
                 animationIndex = toolAnimationIndex;
 
-                useTool(animationSelectionNumber, toolAnimationIndex);
+                useTool(arraySelectionNumber, toolAnimationIndex);
 
                 toolAnimationIndex++;
             }
+
             if (GetSpritesInAction(this.entityAction) == 9) animationIndex = currentIndex;
+
             if (toolAnimationIndex >= 8) {
                 this.entityAction = startAni;
                 weapon = false;
@@ -340,7 +276,6 @@ public class Player extends MovableEntity {
         if (weapon) return false;
 
         boolean moving = false;
-
 
         if (left && !right && !down && !up) {
             x -= playerSpeed;
@@ -441,8 +376,61 @@ public class Player extends MovableEntity {
         return playerHeight;
     }
 
-    public boolean getMovementConditionals() {
-        return this.shouldIMove();
+    private @NotNull Rectangle2D initPlayerHitbox() {
+        return new Rectangle2D() {
+            @Override
+            public void setRect(double x, double y, double w, double h) {
+
+            }
+
+            @Override
+            public int outcode(double x, double y) {
+                return 0;
+            }
+
+            @Override
+            public Rectangle2D createIntersection(Rectangle2D r) {
+                Rectangle2D intersection = new Rectangle2D.Double();
+                Rectangle2D.intersect(this, r, intersection);
+
+                // If the intersection is not empty, return it; otherwise, return null
+                if (!intersection.isEmpty()) {
+                    return intersection;
+                } else {
+                    return null;
+                }
+            }
+
+            @Override
+            public Rectangle2D createUnion(Rectangle2D r) {
+                return null;
+            }
+
+            @Override
+            public double getX() {
+                return (Player.super.x + (50 * zoomMultiplier));
+            }
+
+            @Override
+            public double getY() {
+                return (Player.super.y + (130 * zoomMultiplier));
+            }
+
+            @Override
+            public double getWidth() {
+                return (60 * zoomMultiplier);
+            }
+
+            @Override
+            public double getHeight() {
+                return (32 * zoomMultiplier);
+            }
+
+            @Override
+            public boolean isEmpty() {
+                return false;
+            }
+        };
     }
 
 }

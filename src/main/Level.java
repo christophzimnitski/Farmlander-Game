@@ -53,6 +53,7 @@ public class Level implements Runnable {
             levelManager.getObjects().add(player.getInventory());
             levelManager.getObjects().add(player.getX());
             levelManager.getObjects().add(player.getY());
+            levelManager.getObjects().add(player.getSelectedAnimationArray());
             LevelManager.saveObjects(levelManager.getObjects(), "objects.dat");
             System.out.println("Objects saved to file.");
         }));

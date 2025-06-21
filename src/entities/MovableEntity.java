@@ -12,15 +12,13 @@ public abstract class MovableEntity extends AnimatedEntity {
     protected Collisions collisionsForLayer;
     protected Rectangle2D hitbox;
     protected Integer entityAction;
-    protected Boolean isMoving;
     protected int[][] animationArrays;
-    protected int animationSelectionNumber;
+    protected int arraySelectionNumber;
     protected int[] selectedAnimationArray;
     protected String movingDirection;
 
     public MovableEntity(float x, float y) {
         super(x, y);
-
     }
 
     protected void checkAllCollisions() {
@@ -35,24 +33,33 @@ public abstract class MovableEntity extends AnimatedEntity {
 
             for (int i = 0; i < collisionsForLayer.collideObjects.size(); i++) {
 
-                if (collisionsForLayer.collideObjects.get(i).intersects(hitbox)) {
+                Rectangle2D collisionRectangle = collisionsForLayer.collideObjects.get(i);
 
+                if (collisionRectangle.intersects(hitbox)) {
+                    Rectangle2D collisionArea = hitbox.createIntersection(collisionsForLayer.collideObjects.get(i));
 
-                    Rectangle2D intersection = hitbox.createIntersection(collisionsForLayer.collideObjects.get(i));
+                    double collisionErrorOffset = (0.3 * zoomMultiplier);
+                    double collisionHeight = (collisionArea.getHeight()) + collisionErrorOffset;
+                    double collisionWidth = (collisionArea.getWidth()) + collisionErrorOffset;
 
+                    boolean isCollidingTopOrBottom = collisionArea.getWidth() > collisionHeight;
+                    boolean isCollidingLeftOrRight = collisionArea.getHeight() > collisionWidth;
 
-                    if (intersection.getWidth() > intersection.getHeight() + (0.3 * zoomMultiplier)) {
-                        if (intersection.getY() > hitbox.getY()) {
-                            y -= (float) ((float) (intersection.getHeight()) + (0.3 * zoomMultiplier));
+                    boolean isCollidingBottomSide = collisionArea.getY() > hitbox.getY();
+                    boolean isCollidingRightSide = collisionArea.getX() > hitbox.getX();
+
+                    if (isCollidingTopOrBottom) {
+                        if (isCollidingBottomSide) {
+                            y -= (float) collisionHeight; //Move Up
                         } else {
-                            y += (float) ((float) (intersection.getHeight()) + (0.3 * zoomMultiplier));
+                            y += (float) collisionHeight; //Move Down
                         }
                     }
-                    if (intersection.getHeight() > intersection.getWidth() + (0.3 * zoomMultiplier)) {
-                        if (intersection.getX() > hitbox.getX()) {
-                            x -= (float) ((float) (intersection.getWidth()) + (0.3 * zoomMultiplier));;
+                    if (isCollidingLeftOrRight) {
+                        if (isCollidingRightSide) {
+                            x -= (float) collisionWidth; //Move Left
                         } else {
-                            x += (float) ((float) (intersection.getWidth()) + (0.3 * zoomMultiplier));;
+                            x += (float) collisionWidth; //Move Right
                         }
                     }
                 }
@@ -65,13 +72,14 @@ public abstract class MovableEntity extends AnimatedEntity {
     }
 
     public void changeAnimationArray(int changeIncrement) {
-        animationSelectionNumber += changeIncrement;
+        //Player tool changes makes it have a different array for walking, this changes it to match
+        arraySelectionNumber += changeIncrement;
 
-        if (animationSelectionNumber >= animationArrays.length) {
-            animationSelectionNumber = 0;
+        if (arraySelectionNumber >= animationArrays.length) {
+            arraySelectionNumber = 0;
         }
 
-        selectedAnimationArray = animationArrays[animationSelectionNumber];
+        selectedAnimationArray = animationArrays[arraySelectionNumber];
 
         if (Objects.equals(movingDirection, "Up")) {
             entityAction = selectedAnimationArray[0];
@@ -90,10 +98,6 @@ public abstract class MovableEntity extends AnimatedEntity {
             movingDirection = "Right";
         }
 
-    }
-
-    public boolean getMovementConditionals() {
-        return true;
     }
 
     protected abstract void loadAnimations();
@@ -119,5 +123,13 @@ public abstract class MovableEntity extends AnimatedEntity {
                 default -> null;
             };
         } else return null;
+    }
+
+    public int[] getSelectedAnimationArray() {
+        return selectedAnimationArray;
+    }
+
+    public void setSelectedAnimationArray(int[] selectedAnimationArray) {
+        this.selectedAnimationArray = selectedAnimationArray;
     }
 }

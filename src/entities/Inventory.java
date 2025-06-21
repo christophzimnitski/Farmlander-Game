@@ -24,10 +24,8 @@ public class Inventory implements Serializable {
     }
 
     public void render(Graphics g) {
-        int width = 1200;
-        int height = width / 10;
-        g.drawImage(LoadSave.INVENTORY, (GAME_WIDTH / 2) - (width / 2), (GAME_HEIGHT * 3 / 4) + (GAME_HEIGHT / 8), width, height, null);
-        g.drawImage(LoadSave.INVENTORY_TOGGLE, ((GAME_WIDTH / 2) - (width / 2)) + (toggle * width / 10), (GAME_HEIGHT * 3 / 4) + (GAME_HEIGHT / 8), width / 10, height, null);
+        drawInventory(g);
+        drawItems(g);
     }
 
     public void addInventoryItem(int spot, int amount, int item) {
@@ -57,6 +55,31 @@ public class Inventory implements Serializable {
 
     public int[] getInventoryAmounts() {
         return inventoryAmounts;
+    }
+
+    public void drawInventory(Graphics g) {
+        int inventoryWidth = 1200;
+        int inventoryHeight = inventoryWidth / 10;
+        int inventoryX = (GAME_WIDTH / 2) - (inventoryWidth / 2);
+        int inventoryY = (GAME_HEIGHT * 3 / 4) + (GAME_HEIGHT / 8);
+
+        g.drawImage(LoadSave.INVENTORY, inventoryX, inventoryY, inventoryWidth, inventoryHeight, null);
+        g.drawImage(LoadSave.INVENTORY_TOGGLE, inventoryX + (toggle * inventoryWidth/10), inventoryY, inventoryWidth/10, inventoryHeight, null);
+    }
+
+    public void drawItems(Graphics g) {
+        int index = 0;
+        int inventoryWidth = 1200;
+        int inventoryHeight = inventoryWidth / 10;
+        int inventoryX = (GAME_WIDTH / 2) - (inventoryWidth / 2);
+        int inventoryY = (GAME_HEIGHT * 3 / 4) + (GAME_HEIGHT / 8);
+
+        for (int i = 0; i < inventory.length; i++) {
+            if (inventory[i] != Nothing) {
+                g.drawImage(LoadSave.GetSpriteAtlas("food/" + inventory[i] + ".png"), inventoryX + (index * inventoryWidth / 10) + GAME_WIDTH/120, inventoryY+GAME_HEIGHT/80, inventoryWidth / 15, (int) (inventoryHeight/1.5), null);
+            }
+            index++;
+        }
     }
 
     public void toggle(int toggle) {
