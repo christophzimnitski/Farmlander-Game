@@ -1,7 +1,9 @@
 package levels;
 
+import entities.Player;
 import main.Level;
 import org.jetbrains.annotations.NotNull;
+import utilz.Constants;
 import utilz.LoadSave;
 
 import javax.swing.*;
@@ -27,8 +29,15 @@ public class CropsLayer implements LayerInterface, Serializable {
     int[] cropsType = IntStream.rangeClosed(1, 480).toArray();
     int[][] timesLeft = new int[40][22];
 
+    private final Player player;
+
+    public boolean isCropCollectable = false;
+    public int closestCropRow = 0;
+    public int closestCropColumn = 0;
+
     public CropsLayer(Level level) {
         this.level = level;
+        this.player = level.getPlayer();
     }
 
     public static BufferedImage[] addValue(BufferedImage[] array, BufferedImage x) {
@@ -186,8 +195,9 @@ public class CropsLayer implements LayerInterface, Serializable {
                 if (y == 30) pineapple = addValue(pineapple, LoadSave.cropsTileset[x][y]);
                 if (y == 31) kiwi = addValue(kiwi, LoadSave.cropsTileset[x][y]);
             }
-        crops = new BufferedImage[][]{potato, goldPotato,
-
+        crops = new BufferedImage[][]{
+                potato,
+                goldPotato,
                 purplePotato,
                 sweetPotato,
                 cassava,
@@ -258,14 +268,51 @@ public class CropsLayer implements LayerInterface, Serializable {
     }
 
     public void drawLayer(Graphics g, float offsetX, float offsetY) {
-        int y = -1;
-        for (int j = 0; j < layerArray.length; j++)
-            for (int i = 0; i < layerArray[j].length; i++) {
-                y++;
-                g.drawImage(layerDictionary.get(layerArray[j][i]), (int) (j * (64 * zoomMultiplier) + (32 * zoomMultiplier)) - (int) offsetX, (int) (i * (64 * zoomMultiplier) + (16 * zoomMultiplier)) - (int) offsetY, (int) ((64 * zoomMultiplier)), (int) ((128 * zoomMultiplier)), null);
-                //g.drawImage(layerDictionary.get(y+200), (int)(i * (64 * zoomMultiplier) + (32 * zoomMultiplier)), (int)(j * (64 * zoomMultiplier) + (16 * zoomMultiplier)), (int)((64 * zoomMultiplier)), (int)((128 * zoomMultiplier)), null);
+        //int y = -1; //DRAW ALL CROPS
+        for (int row = 0; row < layerArray.length; row++)
+            for (int column = 0; column < layerArray[row].length; column++) {
+                //y+=5;
+                //g.drawImage(layerDictionary.get(1), 100, 100, 320, 640, null); //DRAW TEST PLANT
+                g.drawImage(layerDictionary.get(layerArray[row][column]), (int) (row * (64 * zoomMultiplier) + (32 * zoomMultiplier)) - (int) offsetX, (int) (column * (64 * zoomMultiplier) + (16 * zoomMultiplier)) - (int) offsetY, (int) ((64 * zoomMultiplier)), (int) ((128 * zoomMultiplier)), null);
+                //g.drawImage(layerDictionary.get(y), (int)(column * (64 * zoomMultiplier) + (32 * zoomMultiplier)), (int)(row * (64 * zoomMultiplier) + (16 * zoomMultiplier)), (int)((64 * zoomMultiplier)), (int)((128 * zoomMultiplier)), null); //DRAW ALL PLANTS
             }
 
+    }
+
+    public void drawCollectionButton(Graphics g, float offsetX, float offsetY) {
+        closestCropRow = 0;
+        closestCropColumn = 0;
+        int closestDistance = 1000;
+
+        for (int row = 0; row < layerArray.length; row++)
+            for (int column = 0; column < layerArray[row].length; column++) {
+                if (layerArray[row][column] != 0 && timesLeft[row][column] == 0) {
+                    if (playerDistance(row , column, offsetX, offsetY, g) < closestDistance) {
+                        closestDistance = playerDistance(row , column, offsetX, offsetY, g);
+                        closestCropRow = row;
+                        closestCropColumn = column;
+                    }
+                }
+            }
+
+        isCropCollectable = closestDistance <= 196;
+        if (isCropCollectable) g.drawImage(LoadSave.GetSpriteAtlas(LoadSave.collectionIcon), (int) (closestCropRow * (64 * zoomMultiplier) + (48 * zoomMultiplier)) - (int) offsetX, (int) (closestCropColumn * (64 * zoomMultiplier) + (100 * zoomMultiplier)) - (int) offsetY, (int) ((32 * zoomMultiplier)), (int) ((32 * zoomMultiplier)), null);
+
+    }
+
+    private int playerDistance(int row, int column, float offsetX, float offsetY, Graphics g) {
+        double x = player.getHitbox().getX() - offsetX;
+        double y = player.getHitbox().getY() - offsetY;
+
+        //g.drawRect((int) x, (int) y, (int) player.getHitbox().getWidth(), (int) player.getHitbox().getHeight());
+        //g.drawRect((int) (row * (64 * zoomMultiplier) + (32 * zoomMultiplier)) - (int) offsetX, (int) (column * (64 * zoomMultiplier) + (80 * zoomMultiplier)) - (int) offsetY, (int) ((64 * zoomMultiplier)), (int) ((128 * zoomMultiplier)));
+
+        row = (int) (row * (64 * zoomMultiplier) + (32 * zoomMultiplier)) - (int) offsetX;
+        column = (int) (column * (64 * zoomMultiplier) + (128 * zoomMultiplier)) - (int) offsetY;
+
+        int distanceDifference = (int) Math.sqrt(((row - x) * (row-x)) + ((column - y) * (column - y)));
+
+        return (int) (distanceDifference * zoomMultiplier);
     }
 
     public void editLayer(int x, int y, int amount) {
@@ -278,14 +325,22 @@ public class CropsLayer implements LayerInterface, Serializable {
 
     }
 
+    public void collectPlant(int row, int column) {
+        System.out.println(layerArray[row][column]);
+        if ((1+layerArray[row][column])%5 == 0) {
+            player.getInventory().addInventoryItem(player.getInventory().getToggle(), 1, 100 + layerArray[row][column]/5);
+        }
+        layerArray[row][column] = 0;
+    }
+
     public void drawCollisionMask(Graphics g, float offsetX, float offsetY) {
 
         int y = (int) level.getPlayer().getHitbox().getY();
 
-        for (int j = 0; j < layerArray.length; j++)
-            for (int i = 0; i < layerArray[j].length; i++) {
-                if (y <= i * (64 * zoomMultiplier) + (100 * zoomMultiplier))
-                    g.drawImage(layerDictionary.get(layerArray[j][i]), (int) (j * (64 * zoomMultiplier) + (32 * zoomMultiplier)) - (int) offsetX, (int) (i * (64 * zoomMultiplier) + (16 * zoomMultiplier)) - (int) offsetY, (int) ((64 * zoomMultiplier)), (int) ((128 * zoomMultiplier)), null);
+        for (int row = 0; row < layerArray.length; row++)
+            for (int column = 0; column < layerArray[row].length; column++) {
+                if (y <= column * (64 * zoomMultiplier) + (100 * zoomMultiplier))
+                    g.drawImage(layerDictionary.get(layerArray[row][column]), (int) (row * (64 * zoomMultiplier) + (32 * zoomMultiplier)) - (int) offsetX, (int) (column * (64 * zoomMultiplier) + (16 * zoomMultiplier)) - (int) offsetY, (int) ((64 * zoomMultiplier)), (int) ((128 * zoomMultiplier)), null);
             }
 
     }
@@ -327,11 +382,12 @@ public class CropsLayer implements LayerInterface, Serializable {
 
     @Override
     public void formatLayer(int[][] layerArray, int[] arrayType) {
-        for (int j = 0; j < layerArray.length; j++)
-            for (int i = 0; i < layerArray[j].length; i++) {
-                //layerArray[j][i] = 0; //Clear Array
-                if ((layerArray[j][i] + 1) % 5 != 0 && layerArray[j][i] % 5 != 0 && layerArray[j][i] != 0)
-                    growPlant(j * (int) (64 * zoomMultiplier), i * (int) (64 * zoomMultiplier), timesLeft[j][i]);
+        for (int row = 0; row < layerArray.length; row++)
+            for (int column = 0; column < layerArray[row].length; column++) {
+                //layerArray[row][column] = 0; //Clear Array
+                if ((layerArray[row][column] + 1) % 5 != 0 && layerArray[row][column] % 5 != 0 && layerArray[row][column] != 0)
+                    growPlant(row * (int) (64 * zoomMultiplier), column * (int) (64 * zoomMultiplier), timesLeft[row][column]);
+                else timesLeft[row][column] = 0;
             }
     }
 

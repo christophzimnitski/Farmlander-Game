@@ -11,8 +11,6 @@ import java.awt.image.BufferedImage;
 import java.util.Arrays;
 import java.util.Objects;
 
-import static utilz.Constants.InventoryConstants.Radish;
-import static utilz.Constants.InventoryConstants.Watermelon;
 import static utilz.Constants.PlayerActionConstants.*;
 import static utilz.Constants.Zoom.zoomMultiplier;
 
@@ -37,9 +35,10 @@ public class Player extends MovableEntity {
         super(x, y);
 
         hitbox = initPlayerHitbox();
-
+        entityAction = 0;
         animationArrays = playerAnimationArrays;
-        arraySelectionNumber = 0;
+        selectedAnimationArray = animationArrays[0];
+
 
         loadAnimations();
 
@@ -48,9 +47,8 @@ public class Player extends MovableEntity {
             setX((Float) loadedObjects[6]);
             setY((Float) loadedObjects[7]);
             setSelectedAnimationArray((int[]) loadedObjects[8]);
+            setEntityAction((Integer) loadedObjects[9]);
         } catch (Exception ignored) {}
-
-        entityAction = selectedAnimationArray[0];
 
         System.out.println(Arrays.toString(inventory.getInventory()));
         System.out.println(Arrays.toString(inventory.getInventoryAmounts()));

@@ -31,7 +31,14 @@ public class CollisionLayer implements LayerInterface, Serializable {
     }
 
     public void drawLayer(Graphics g, float offsetX, float offsetY) {
-        LayerInterface.super.drawLayer(g, layerArray, layerDictionary, offsetX, offsetY);
+        int y = (int) level.getPlayer().getHitbox().getY();
+
+        for (int j = 0; j < layerArray.length; j++)
+            for (int i = 0; i < layerArray[j].length; i++) {
+                if (y >= i * (64 * zoomMultiplier) + (63 * zoomMultiplier))
+                    g.drawImage(layerDictionary.get(layerArray[j][i]), j * (int) (64 * zoomMultiplier) - (int) offsetX, i * (int) (64 * zoomMultiplier) - (int) offsetY, (int) (64 * zoomMultiplier), (int) (64 * zoomMultiplier), null);
+            }
+
     }
 
     public void drawCollisionMask(Graphics g, float offsetX, float offsetY) {

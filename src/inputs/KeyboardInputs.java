@@ -52,7 +52,7 @@ public class KeyboardInputs implements KeyListener {
                 //mainPanel.getLevel().getLevelManager().getPlantingLayer().editLayer(MouseInfo.getPointerInfo().getLocation().x, MouseInfo.getPointerInfo().getLocation().y - 56, 18);
                 break;
             case KeyEvent.VK_5:
-                //mainPanel.getLevel().getLevelManager().getCropsLayer().editLayer(MouseInfo.getPointerInfo().getLocation().x, MouseInfo.getPointerInfo().getLocation().y - 56 - 64, 1);
+                mainPanel.getLevel().getLevelManager().getCropsLayer().editLayer(MouseInfo.getPointerInfo().getLocation().x, MouseInfo.getPointerInfo().getLocation().y - 36 - 64, 1);
                 break;
             case KeyEvent.VK_9:
                 //mainPanel.getLevel().getLevelManager().getCollisionLayer().editLayer(MouseInfo.getPointerInfo().getLocation().x, MouseInfo.getPointerInfo().getLocation().y - 56, -80);
@@ -81,8 +81,13 @@ public class KeyboardInputs implements KeyListener {
             case KeyEvent.VK_Q:
                 mainPanel.getLevel().getPlayer().setAttacking(true);
                 break;
-            case KeyEvent.VK_E:
+            case KeyEvent.VK_2:
                 mainPanel.getLevel().getPlayer().changeAnimationArray(1);
+                break;
+            case KeyEvent.VK_E:
+                if (mainPanel.getLevel().getLevelManager().getCropsLayer().isCropCollectable) {
+                    mainPanel.getLevel().getLevelManager().getCropsLayer().collectPlant(mainPanel.getLevel().getLevelManager().getCropsLayer().closestCropRow, mainPanel.getLevel().getLevelManager().getCropsLayer().closestCropColumn);
+                }
                 break;
 
 

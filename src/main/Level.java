@@ -54,6 +54,7 @@ public class Level implements Runnable {
             levelManager.getObjects().add(player.getX());
             levelManager.getObjects().add(player.getY());
             levelManager.getObjects().add(player.getSelectedAnimationArray());
+            levelManager.getObjects().add(player.getEntityAction());
             LevelManager.saveObjects(levelManager.getObjects(), "objects.dat");
             System.out.println("Objects saved to file.");
         }));
@@ -72,6 +73,7 @@ public class Level implements Runnable {
         player.render(g, camera.getOffsetX(), camera.getOffsetY());
         levelManager.getCollisionLayer().drawCollisionMask(g, camera.getOffsetX(), camera.getOffsetY());
         levelManager.getCropsLayer().drawCollisionMask(g, camera.getOffsetX(), camera.getOffsetY());
+        levelManager.getCropsLayer().drawCollectionButton(g, camera.getOffsetX(), camera.getOffsetY()) ;
 
         player.getInventory().render(g);
     }

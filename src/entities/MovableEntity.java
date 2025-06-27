@@ -132,4 +132,12 @@ public abstract class MovableEntity extends AnimatedEntity {
     public void setSelectedAnimationArray(int[] selectedAnimationArray) {
         this.selectedAnimationArray = selectedAnimationArray;
     }
+
+    public Integer getEntityAction() {
+        return entityAction;
+    }
+
+    public void setEntityAction(Integer entityAction) {
+        this.entityAction = entityAction;
+    }
 }

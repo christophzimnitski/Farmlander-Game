@@ -17,6 +17,7 @@ public class LoadSave {
     public static final String SAND = "tilesets/sand.png";
     public static final String SAND_WATER = "tilesets/sandwater.png";
     public static final String PLANTS = "tilesets/plants.png";
+    public static final String collectionIcon = "ui/collect_button.png";
     public static final BufferedImage INVENTORY = GetSpriteAtlas("ui/Inventory.png");
     public static final BufferedImage INVENTORY_TOGGLE = GetSpriteAtlas("ui/toggle.png");
     public static final BufferedImage[][] grassTileset = loadAnimations(GetSpriteAtlas("tilesets/grassTileset.png"), 1, 3);
@@ -29,6 +30,7 @@ public class LoadSave {
     public static final BufferedImage[][] reedTileset = loadAnimations(GetSpriteAtlas("tilesets/reed.png"), 6, 3);
     public static final BufferedImage[][] plowedSoilTileset = loadAnimations(GetSpriteAtlas("tilesets/plowed_soil.png"), 6, 3);
     public static final BufferedImage[][] cropsTileset = loadAnimations(GetSpriteAtlas("tilesets/crops.png"), 15, 32, 64, 32);
+    public static final BufferedImage[][] numbers = loadAnimations(GetSpriteAtlas("ui/game_font.png"), 1, 11, 8, 8);
 
     public static BufferedImage GetSpriteAtlas(String fileName) {
         BufferedImage img;
