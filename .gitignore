@@ -1,29 +1,36 @@
-### IntelliJ IDEA ###
+# Build output
+build/
 out/
-!**/src/main/**/out/
-!**/src/test/**/out/
+bin/
+*.class
 
-### Eclipse ###
+# Gradle
+.gradle/
+
+# IDE — IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# IDE — Eclipse / VS Code
 .apt_generated
 .classpath
 .factorypath
 .project
-.settings
+.settings/
 .springBeans
 .sts4-cache
-bin/
-!**/src/main/**/bin/
-!**/src/test/**/bin/
-
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-
-### VS Code ###
 .vscode/
 
-### Mac OS ###
+# NetBeans
+nbproject/
+dist/
+nbdist/
+.nb-gradle/
+
+# Game save data (lives in ~/.farmlander, never in the repo)
+objects.dat
+
+# macOS
 .DS_Store

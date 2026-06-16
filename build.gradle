@@ -1,0 +1,22 @@
+plugins {
+    id 'application'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Compile-time only: @NotNull etc. have CLASS retention, not needed at runtime.
+    compileOnly 'org.jetbrains:annotations:24.0.0'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+application {
+    mainClass = 'main.Main'
+}
