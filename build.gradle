@@ -6,9 +6,18 @@ repositories {
     mavenCentral()
 }
 
+ext {
+    gdxVersion = '1.13.1'
+}
+
 dependencies {
     // Compile-time only: @NotNull etc. have CLASS retention, not needed at runtime.
     compileOnly 'org.jetbrains:annotations:24.0.0'
+
+    // libGDX: core API + desktop (LWJGL3) backend + desktop native libs.
+    implementation "com.badlogicgames.gdx:gdx:$gdxVersion"
+    implementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion"
+    runtimeOnly "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
 }
 
 java {
@@ -18,5 +27,19 @@ java {
 }
 
 application {
+    // Swing version (still the default `./gradlew run` during the libGDX migration).
     mainClass = 'main.Main'
+}
+
+// libGDX version — run with: ./gradlew runGdx
+// (separate task so the Swing `run` stays clean; -XstartOnFirstThread is required
+//  by GLFW on macOS but conflicts with AWT/Swing, so it lives only here.)
+tasks.register('runGdx', JavaExec) {
+    group = 'application'
+    description = 'Run the libGDX (in-migration) version of the game.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'core.DesktopLauncher'
+    if (System.getProperty('os.name').toLowerCase().contains('mac')) {
+        jvmArgs = ['-XstartOnFirstThread']
+    }
 }
