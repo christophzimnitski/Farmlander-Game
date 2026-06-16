@@ -8,57 +8,68 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import core.GameState;
 import core.GameStateManager;
+import entities.Inventory;
 import levels.GrassLayer;
 import levels.LevelManager;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
- * Renders your real saved world (grass + tilled soil + collidables) and the
- * player with a hand-stepped walk animation (Stage B). Frame stepping mirrors
- * your Player.updateAnimationTick: walk actions have 9 frames, frame 0 is idle,
- * walking cycles frames 1..8 at aniSpeed 16 (= 16/144 s per frame).
+ * Renders your real saved world (grass + tilled soil + collidables, depth-sorted
+ * around the player), the player with a hand-stepped walk animation and AABB
+ * collision, and the screen-space inventory HUD. All from your save in
+ * ~/.farmlander, faithful to the Swing layers.
  *
- * Deferred: collision, crops (none planted), tool actions, inventory.
+ * Deferred: crops (none planted), tool actions / planting interaction.
  */
 public class PlayState extends GameState {
     private static final float TILE = 96f;          // 64 * zoom(1.5)
     private static final float PLAYER_SIZE = 240f;  // 32 * 5 * zoom(1.5)
-    private static final float MOVE_SPEED = 270f;   // ~ Swing playerSpeed (1.25*1.5) * 144 ups
-    private static final float ANIM_FRAME_TIME = 16f / 144f; // aniSpeed 16 ticks at 144 ups
+    private static final float MOVE_SPEED = 270f;
+    private static final float ANIM_FRAME_TIME = 16f / 144f;
     private static final int WALK_FRAMES = 9;
 
-    // Player hitbox (feet) relative to player x/y, and collision push tuning —
-    // mirrors Player.initPlayerHitbox and MovableEntity.checkCollision at zoom 1.5.
-    private static final float HITBOX_OFF_X = 75f, HITBOX_OFF_Y = 195f; // 50*z, 130*z
-    private static final float HITBOX_W = 90f, HITBOX_H = 48f;          // 60*z, 32*z
-    private static final float COLLISION_ERR = 0.45f;                   // 0.3*z
-    // Collision-layer tile indices that are walkable (edge/transition tiles).
+    private static final float HITBOX_OFF_X = 75f, HITBOX_OFF_Y = 195f;
+    private static final float HITBOX_W = 90f, HITBOX_H = 48f;
+    private static final float COLLISION_ERR = 0.45f;
     private static final int[] NON_COLLIDABLE = {7, 8, 9, 25, 26, 27, 43, 44, 45};
-    // Depth-sort threshold (63*zoom): tiles above the player's feet draw under it,
-    // tiles the player stands behind draw over it. Mirrors drawLayer/drawCollisionMask.
     private static final float DEPTH_OFFSET = 94.5f;
 
     private final OrthographicCamera camera;
+    private final OrthographicCamera hudCam; // screen-space HUD, Y-down like the world
 
     private final Texture grassTex, plowedTex, tallGrassTex, wheatTex, youngWheatTex, playerTex;
+    private final Texture invBarTex, toggleTex, fontTex;
     private final TextureRegion[] grassRegions, plantingRegions, collisionRegions;
-    private final TextureRegion[][] playerFrames; // [36 actions][9 frames], 64x64
+    private final TextureRegion[][] playerFrames;
+    private final TextureRegion invBarRegion, toggleRegion;
+    private final TextureRegion[] numberRegions; // 0..10, sliced from game_font (8x8)
+
+    // Food sprites are individual PNGs loaded on demand and cached.
+    private final Map<Integer, TextureRegion> foodRegions = new HashMap<>();
+    private final List<Texture> foodTextures = new ArrayList<>();
 
     private final int[][] grass, planting, collision;
-    private float playerX, playerY;
+    private final int[] invItems, invAmounts;
+    private final int invToggle;
 
-    // Animation state (hand-stepped, mirroring Player.updateAnimationTick).
-    private int[] walkActions;   // [up, left, down, right] action rows for current tool
-    private int currentAction;   // row into playerFrames
-    private int frameIndex = 0;  // 0 = idle, 1..8 = walk cycle
+    private float playerX, playerY;
+    private int[] walkActions;
+    private int currentAction;
+    private int frameIndex = 0;
     private float animTimer = 0;
 
     public PlayState(GameStateManager gsm) {
         super(gsm);
 
+        int w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
         camera = new OrthographicCamera();
-        camera.setToOrtho(true, Gdx.graphics.getWidth(), Gdx.graphics.getHeight()); // Y-down to match Swing
+        camera.setToOrtho(true, w, h); // Y-down to match Swing
+        hudCam = new OrthographicCamera();
+        hudCam.setToOrtho(true, w, h);
 
         grassTex      = new Texture(Gdx.files.classpath("tilesets/grassTileset.png"));
         plowedTex     = new Texture(Gdx.files.classpath("tilesets/plowed_soil.png"));
@@ -66,6 +77,9 @@ public class PlayState extends GameState {
         wheatTex      = new Texture(Gdx.files.classpath("tilesets/wheat.png"));
         youngWheatTex = new Texture(Gdx.files.classpath("tilesets/youngwheat.png"));
         playerTex     = new Texture(Gdx.files.classpath("player_animations/player_mining.png"));
+        invBarTex     = new Texture(Gdx.files.classpath("ui/Inventory.png"));
+        toggleTex     = new Texture(Gdx.files.classpath("ui/toggle.png"));
+        fontTex       = new Texture(Gdx.files.classpath("ui/game_font.png"));
 
         grassRegions    = slice(grassTex, 1, 3);
         plantingRegions = slice(plowedTex, 6, 3);
@@ -79,9 +93,6 @@ public class PlayState extends GameState {
             collisionRegions[k + 36] = yw[k];
         }
 
-        // Inset each frame's edges by half a texel so upscaling (64->240, a
-        // non-integer 3.75x) can't sample a sliver of the neighbouring frame
-        // stacked above/below it in the atlas (the "line above the player").
         playerFrames = new TextureRegion[36][9];
         float tw = playerTex.getWidth(), th = playerTex.getHeight();
         float pad = 0.5f;
@@ -95,15 +106,31 @@ public class PlayState extends GameState {
             }
         }
 
+        invBarRegion = flippedFull(invBarTex);
+        toggleRegion = flippedFull(toggleTex);
+        // game_font.png: 1 row of 11 number glyphs, 8x8 each.
+        numberRegions = new TextureRegion[11];
+        for (int k = 0; k < 11; k++) {
+            TextureRegion r = new TextureRegion(fontTex, k * 8, 0, 8, 8);
+            r.flip(false, true);
+            numberRegions[k] = r;
+        }
+
         int[][] sCollision, sPlanting, sGrass;
         float px = 2000, py = 800;
-        int action = 34; // WALK_DOWN default
-        int[] selected = {32, 33, 34, 35}; // WALK_UP/LEFT/DOWN/RIGHT default
+        int action = 34;
+        int[] selected = {32, 33, 34, 35};
+        int[] items, amounts;
+        int tog;
         try {
             List<Object> save = LevelManager.loadObjects(LevelManager.SAVE_FILE);
             sCollision = (int[][]) save.get(0);
             sPlanting  = (int[][]) save.get(1);
             sGrass     = (int[][]) save.get(2);
+            Inventory inv = (Inventory) save.get(5);
+            items = inv.getInventory();
+            amounts = inv.getInventoryAmounts();
+            tog = inv.getToggle();
             px = (Float) save.get(6);
             py = (Float) save.get(7);
             selected = (int[]) save.get(8);
@@ -114,14 +141,26 @@ public class PlayState extends GameState {
             sGrass = fallback.getLayerArray();
             sPlanting = new int[40][22];
             sCollision = new int[40][22];
+            items = new int[10];
+            amounts = new int[10];
+            tog = 0;
         }
         collision = sCollision;
         planting = sPlanting;
         grass = sGrass;
+        invItems = items;
+        invAmounts = amounts;
+        invToggle = tog;
         playerX = px;
         playerY = py;
         walkActions = (selected != null && selected.length == 4) ? selected : new int[]{32, 33, 34, 35};
         currentAction = (action >= 0 && action < 36) ? action : 34;
+    }
+
+    private TextureRegion flippedFull(Texture tex) {
+        TextureRegion r = new TextureRegion(tex);
+        r.flip(false, true);
+        return r;
     }
 
     private TextureRegion[] slice(Texture tex, int rows, int cols) {
@@ -137,12 +176,26 @@ public class PlayState extends GameState {
         return regions;
     }
 
+    /** food/<id>.png loaded on demand (cached, null cached too so we don't retry). */
+    private TextureRegion foodRegion(int id) {
+        if (foodRegions.containsKey(id)) return foodRegions.get(id);
+        TextureRegion region = null;
+        try {
+            Texture t = new Texture(Gdx.files.classpath("food/" + id + ".png"));
+            foodTextures.add(t);
+            region = new TextureRegion(t);
+            region.flip(false, true);
+        } catch (Exception ignored) {
+        }
+        foodRegions.put(id, region);
+        return region;
+    }
+
     private static boolean isNonCollidable(int v) {
         for (int n : NON_COLLIDABLE) if (n == v) return true;
         return false;
     }
 
-    /** True if the player's feet hitbox at (px,py) overlaps any solid collision tile. */
     private boolean collidesAt(float px, float py) {
         float hx = px + HITBOX_OFF_X, hy = py + HITBOX_OFF_Y;
         for (int j = 0; j < collision.length; j++) {
@@ -158,44 +211,28 @@ public class PlayState extends GameState {
         return false;
     }
 
-    /**
-     * Push the player out of solid collision tiles. Faithful to
-     * MovableEntity.checkCollision: resolve along the smaller overlap axis,
-     * recomputing the (live) hitbox per tile so sequential pushes compose.
-     */
     private void resolveCollisions() {
         for (int j = 0; j < collision.length; j++) {
             for (int i = 0; i < collision[j].length; i++) {
                 int v = collision[j][i];
                 if (v < 1 || isNonCollidable(v)) continue;
-
                 float tx = j * TILE, ty = i * TILE;
                 float hx = playerX + HITBOX_OFF_X, hy = playerY + HITBOX_OFF_Y;
-
                 float ix = Math.max(hx, tx), iy = Math.max(hy, ty);
                 float ix2 = Math.min(hx + HITBOX_W, tx + TILE), iy2 = Math.min(hy + HITBOX_H, ty + TILE);
-                if (ix >= ix2 || iy >= iy2) continue; // no overlap
-
+                if (ix >= ix2 || iy >= iy2) continue;
                 float overlapW = ix2 - ix, overlapH = iy2 - iy;
                 float pushH = overlapH + COLLISION_ERR, pushW = overlapW + COLLISION_ERR;
-
-                if (overlapW > pushH) {              // colliding top/bottom
-                    if (iy > hy) playerY -= pushH;    // tile below -> move up
-                    else playerY += pushH;            // tile above -> move down
+                if (overlapW > pushH) {
+                    if (iy > hy) playerY -= pushH; else playerY += pushH;
                 }
-                if (overlapH > pushW) {              // colliding left/right
-                    if (ix > hx) playerX -= pushW;    // tile right -> move left
-                    else playerX += pushW;            // tile left -> move right
+                if (overlapH > pushW) {
+                    if (ix > hx) playerX -= pushW; else playerX += pushW;
                 }
             }
         }
     }
 
-    /**
-     * Draw collidables split by depth: {@code inFront=false} draws tiles above the
-     * player's feet (under the player); {@code inFront=true} draws tiles the player
-     * stands behind (over the player), so the player is occluded by bush tops.
-     */
     private void drawCollision(SpriteBatch batch, boolean inFront) {
         float feetY = playerY + HITBOX_OFF_Y;
         for (int j = 0; j < collision.length; j++) {
@@ -220,6 +257,29 @@ public class PlayState extends GameState {
         }
     }
 
+    private void drawHud(SpriteBatch batch) {
+        float w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
+        float invW = 1200, invH = invW / 10f; // 120
+        float invX = w / 2f - invW / 2f, invY = h * 7f / 8f;
+        float slot = invW / 10f;
+
+        batch.setProjectionMatrix(hudCam.combined);
+        batch.begin();
+        batch.draw(invBarRegion, invX, invY, invW, invH);
+        batch.draw(toggleRegion, invX + invToggle * slot, invY, slot, invH);
+        for (int i = 0; i < invItems.length; i++) {
+            if (invItems[i] != 0) {
+                TextureRegion food = foodRegion(invItems[i]);
+                if (food != null) {
+                    batch.draw(food, invX + i * slot + w / 120f, invY + h / 80f, invW / 15f, invH / 1.5f);
+                }
+                int amt = Math.max(0, Math.min(10, invAmounts[i]));
+                batch.draw(numberRegions[amt], invX + i * slot + w / 32f, invY + h / 18f, invW / 50f, invH / 7f);
+            }
+        }
+        batch.end();
+    }
+
     @Override
     public void update(float delta) {
         boolean up    = Gdx.input.isKeyPressed(Input.Keys.UP)    || Gdx.input.isKeyPressed(Input.Keys.W);
@@ -232,16 +292,13 @@ public class PlayState extends GameState {
         int ix = (right ? 1 : 0) - (left ? 1 : 0);
         int iy = (down ? 1 : 0) - (up ? 1 : 0); // Y-down
         if (ix != 0 && iy != 0) {
-            // Diagonal: if exactly one axis is blocked, you can't actually move
-            // diagonally, so slide the free axis at FULL speed. Only normalize
-            // (0.707 each) when both axes are genuinely free.
             boolean xBlocked = collidesAt(playerX + ix * d, playerY);
             boolean yBlocked = collidesAt(playerX, playerY + iy * d);
             if (xBlocked ^ yBlocked) {
                 if (xBlocked) playerY += iy * d;
                 else playerX += ix * d;
             } else {
-                float inv = 0.70710678f; // 1/sqrt(2)
+                float inv = 0.70710678f;
                 playerX += ix * d * inv;
                 playerY += iy * d * inv;
             }
@@ -250,22 +307,22 @@ public class PlayState extends GameState {
             playerY += iy * d;
         }
 
-        // Facing: later assignments win, matching Player.setAnimation (right > left > down > up).
+        resolveCollisions();
+
+        // Facing: later assignments win (right > left > down > up), as in Swing.
         if (up)    currentAction = walkActions[0];
         if (down)  currentAction = walkActions[2];
         if (left)  currentAction = walkActions[1];
         if (right) currentAction = walkActions[3];
 
-        resolveCollisions();
-
         boolean moving = up || down || left || right;
         if (moving) {
-            if (frameIndex == 0) frameIndex = 1; // skip idle frame once moving
+            if (frameIndex == 0) frameIndex = 1;
             animTimer += delta;
             if (animTimer >= ANIM_FRAME_TIME) {
                 animTimer -= ANIM_FRAME_TIME;
                 frameIndex++;
-                if (frameIndex >= WALK_FRAMES) frameIndex = 1; // wrap to second frame (idle stays 0)
+                if (frameIndex >= WALK_FRAMES) frameIndex = 1;
             }
         } else {
             frameIndex = 0;
@@ -282,15 +339,18 @@ public class PlayState extends GameState {
         batch.begin();
         drawArray(batch, grass, grassRegions);
         drawArray(batch, planting, plantingRegions);
-        drawCollision(batch, false); // collidables behind the player (under it)
+        drawCollision(batch, false);
         batch.draw(playerFrames[currentAction][frameIndex], playerX, playerY, PLAYER_SIZE, PLAYER_SIZE);
-        drawCollision(batch, true);  // collidables the player stands behind (over it)
+        drawCollision(batch, true);
         batch.end();
+
+        drawHud(batch);
     }
 
     @Override
     public void resize(int width, int height) {
         camera.setToOrtho(true, width, height);
+        hudCam.setToOrtho(true, width, height);
     }
 
     @Override
@@ -301,5 +361,9 @@ public class PlayState extends GameState {
         wheatTex.dispose();
         youngWheatTex.dispose();
         playerTex.dispose();
+        invBarTex.dispose();
+        toggleTex.dispose();
+        fontTex.dispose();
+        for (Texture t : foodTextures) t.dispose();
     }
 }
