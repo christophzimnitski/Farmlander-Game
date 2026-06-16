@@ -28,6 +28,17 @@ public class PlayState extends GameState {
     private static final float ANIM_FRAME_TIME = 16f / 144f; // aniSpeed 16 ticks at 144 ups
     private static final int WALK_FRAMES = 9;
 
+    // Player hitbox (feet) relative to player x/y, and collision push tuning —
+    // mirrors Player.initPlayerHitbox and MovableEntity.checkCollision at zoom 1.5.
+    private static final float HITBOX_OFF_X = 75f, HITBOX_OFF_Y = 195f; // 50*z, 130*z
+    private static final float HITBOX_W = 90f, HITBOX_H = 48f;          // 60*z, 32*z
+    private static final float COLLISION_ERR = 0.45f;                   // 0.3*z
+    // Collision-layer tile indices that are walkable (edge/transition tiles).
+    private static final int[] NON_COLLIDABLE = {7, 8, 9, 25, 26, 27, 43, 44, 45};
+    // Depth-sort threshold (63*zoom): tiles above the player's feet draw under it,
+    // tiles the player stands behind draw over it. Mirrors drawLayer/drawCollisionMask.
+    private static final float DEPTH_OFFSET = 94.5f;
+
     private final OrthographicCamera camera;
 
     private final Texture grassTex, plowedTex, tallGrassTex, wheatTex, youngWheatTex, playerTex;
@@ -126,6 +137,78 @@ public class PlayState extends GameState {
         return regions;
     }
 
+    private static boolean isNonCollidable(int v) {
+        for (int n : NON_COLLIDABLE) if (n == v) return true;
+        return false;
+    }
+
+    /** True if the player's feet hitbox at (px,py) overlaps any solid collision tile. */
+    private boolean collidesAt(float px, float py) {
+        float hx = px + HITBOX_OFF_X, hy = py + HITBOX_OFF_Y;
+        for (int j = 0; j < collision.length; j++) {
+            for (int i = 0; i < collision[j].length; i++) {
+                int v = collision[j][i];
+                if (v < 1 || isNonCollidable(v)) continue;
+                float tx = j * TILE, ty = i * TILE;
+                if (hx < tx + TILE && hx + HITBOX_W > tx && hy < ty + TILE && hy + HITBOX_H > ty) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Push the player out of solid collision tiles. Faithful to
+     * MovableEntity.checkCollision: resolve along the smaller overlap axis,
+     * recomputing the (live) hitbox per tile so sequential pushes compose.
+     */
+    private void resolveCollisions() {
+        for (int j = 0; j < collision.length; j++) {
+            for (int i = 0; i < collision[j].length; i++) {
+                int v = collision[j][i];
+                if (v < 1 || isNonCollidable(v)) continue;
+
+                float tx = j * TILE, ty = i * TILE;
+                float hx = playerX + HITBOX_OFF_X, hy = playerY + HITBOX_OFF_Y;
+
+                float ix = Math.max(hx, tx), iy = Math.max(hy, ty);
+                float ix2 = Math.min(hx + HITBOX_W, tx + TILE), iy2 = Math.min(hy + HITBOX_H, ty + TILE);
+                if (ix >= ix2 || iy >= iy2) continue; // no overlap
+
+                float overlapW = ix2 - ix, overlapH = iy2 - iy;
+                float pushH = overlapH + COLLISION_ERR, pushW = overlapW + COLLISION_ERR;
+
+                if (overlapW > pushH) {              // colliding top/bottom
+                    if (iy > hy) playerY -= pushH;    // tile below -> move up
+                    else playerY += pushH;            // tile above -> move down
+                }
+                if (overlapH > pushW) {              // colliding left/right
+                    if (ix > hx) playerX -= pushW;    // tile right -> move left
+                    else playerX += pushW;            // tile left -> move right
+                }
+            }
+        }
+    }
+
+    /**
+     * Draw collidables split by depth: {@code inFront=false} draws tiles above the
+     * player's feet (under the player); {@code inFront=true} draws tiles the player
+     * stands behind (over the player), so the player is occluded by bush tops.
+     */
+    private void drawCollision(SpriteBatch batch, boolean inFront) {
+        float feetY = playerY + HITBOX_OFF_Y;
+        for (int j = 0; j < collision.length; j++) {
+            for (int i = 0; i < collision[j].length; i++) {
+                int v = collision[j][i];
+                if (v < 1 || v >= collisionRegions.length || collisionRegions[v] == null) continue;
+                float threshold = i * TILE + DEPTH_OFFSET;
+                boolean drawIt = inFront ? (feetY <= threshold) : (feetY >= threshold);
+                if (drawIt) batch.draw(collisionRegions[v], j * TILE, i * TILE, TILE, TILE);
+            }
+        }
+    }
+
     private void drawArray(SpriteBatch batch, int[][] arr, TextureRegion[] regions) {
         for (int j = 0; j < arr.length; j++) {
             for (int i = 0; i < arr[j].length; i++) {
@@ -146,16 +229,34 @@ public class PlayState extends GameState {
         if (Gdx.input.isKeyPressed(Input.Keys.ESCAPE)) Gdx.app.exit();
 
         float d = MOVE_SPEED * delta;
-        if (left)  playerX -= d;
-        if (right) playerX += d;
-        if (up)    playerY -= d; // Y-down
-        if (down)  playerY += d;
+        int ix = (right ? 1 : 0) - (left ? 1 : 0);
+        int iy = (down ? 1 : 0) - (up ? 1 : 0); // Y-down
+        if (ix != 0 && iy != 0) {
+            // Diagonal: if exactly one axis is blocked, you can't actually move
+            // diagonally, so slide the free axis at FULL speed. Only normalize
+            // (0.707 each) when both axes are genuinely free.
+            boolean xBlocked = collidesAt(playerX + ix * d, playerY);
+            boolean yBlocked = collidesAt(playerX, playerY + iy * d);
+            if (xBlocked ^ yBlocked) {
+                if (xBlocked) playerY += iy * d;
+                else playerX += ix * d;
+            } else {
+                float inv = 0.70710678f; // 1/sqrt(2)
+                playerX += ix * d * inv;
+                playerY += iy * d * inv;
+            }
+        } else {
+            playerX += ix * d;
+            playerY += iy * d;
+        }
 
         // Facing: later assignments win, matching Player.setAnimation (right > left > down > up).
         if (up)    currentAction = walkActions[0];
         if (down)  currentAction = walkActions[2];
         if (left)  currentAction = walkActions[1];
         if (right) currentAction = walkActions[3];
+
+        resolveCollisions();
 
         boolean moving = up || down || left || right;
         if (moving) {
@@ -181,8 +282,9 @@ public class PlayState extends GameState {
         batch.begin();
         drawArray(batch, grass, grassRegions);
         drawArray(batch, planting, plantingRegions);
-        drawArray(batch, collision, collisionRegions);
+        drawCollision(batch, false); // collidables behind the player (under it)
         batch.draw(playerFrames[currentAction][frameIndex], playerX, playerY, PLAYER_SIZE, PLAYER_SIZE);
+        drawCollision(batch, true);  // collidables the player stands behind (over it)
         batch.end();
     }
 
