@@ -27,16 +27,18 @@ java {
 }
 
 application {
-    // Swing version (still the default `./gradlew run` during the libGDX migration).
-    mainClass = 'main.Main'
+    // libGDX is the game now (Swing version removed in the cutover).
+    mainClass = 'core.DesktopLauncher'
+    // GLFW on macOS must run on the first thread; harmless on other platforms.
+    if (System.getProperty('os.name').toLowerCase().contains('mac')) {
+        applicationDefaultJvmArgs = ['-XstartOnFirstThread']
+    }
 }
 
-// libGDX version — run with: ./gradlew runGdx
-// (separate task so the Swing `run` stays clean; -XstartOnFirstThread is required
-//  by GLFW on macOS but conflicts with AWT/Swing, so it lives only here.)
+// Back-compat alias: `./gradlew runGdx` still works (identical to `./gradlew run`).
 tasks.register('runGdx', JavaExec) {
     group = 'application'
-    description = 'Run the libGDX (in-migration) version of the game.'
+    description = 'Run the game (alias of run).'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'core.DesktopLauncher'
     if (System.getProperty('os.name').toLowerCase().contains('mac')) {

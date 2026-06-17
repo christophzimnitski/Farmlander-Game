@@ -1,6 +1,5 @@
 package levels;
 
-import entities.Player;
 import org.jetbrains.annotations.NotNull;
 
 import java.awt.*;

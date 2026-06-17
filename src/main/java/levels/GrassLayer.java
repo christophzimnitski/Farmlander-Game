@@ -1,6 +1,5 @@
 package levels;
 
-import main.Level;
 import org.jetbrains.annotations.NotNull;
 import utilz.LoadSave;
 
@@ -14,7 +13,7 @@ import java.util.Random;
 
 public class GrassLayer implements LayerInterface, Serializable {
     Random random = new Random();
-    int[][] layerArray = new int[(int) (Level.TILES_IN_WIDTH*Level.SCALE)][(int) (Level.TILES_IN_HEIGHT*Level.SCALE)];
+    int[][] layerArray = new int[400][220]; // was Level.TILES_IN_WIDTH*SCALE x TILES_IN_HEIGHT*SCALE (200*2 x 110*2)
     Dictionary<Integer, BufferedImage> layerDictionary = new Hashtable<>();
     BufferedImage[][][] tileSets = {LoadSave.grassTileset};
 

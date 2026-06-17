@@ -1,41 +1,26 @@
 package levels;
 
-import main.Level;
-
-import java.awt.*;
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
-public class LevelManager implements java.io.Serializable {
+/**
+ * Static load/save of the serialized world objects. The Swing-era instance side (which wired up the
+ * individual layers and held a {@code main.Level}) was removed in the libGDX cutover — {@code PlayState}
+ * reads the save directly via {@link #loadObjects}.
+ */
+public final class LevelManager {
 
     // Saves live in a per-user data dir, never inside the project/repo.
     public static final String SAVE_FILE =
             System.getProperty("user.home") + File.separator + ".farmlander" + File.separator + "objects.dat";
 
-    private final Level level;
-    Object[] loadedObjects = LevelManager.loadObjects(SAVE_FILE).toArray();
-
-    List<Object> objects = new ArrayList<>();
-    GrassLayer grassLayer = new GrassLayer();
-    CollisionLayer collisionLayer;
-    PlantingLayer plantingLayer;
-    CropsLayer cropsLayer;
-
-    public LevelManager(Level level) {
-        this.level = level;
-        collisionLayer = new CollisionLayer(level);
-        plantingLayer = new PlantingLayer(level);
-        cropsLayer = new CropsLayer(level);
-        try {
-            collisionLayer.setLayerArray((int[][]) loadedObjects[0]);
-            plantingLayer.setLayerArray((int[][]) loadedObjects[1]);
-            grassLayer.setLayerArray((int[][]) loadedObjects[2]);
-            cropsLayer.setLayerArray((int[][]) loadedObjects[3]);
-            cropsLayer.setTimesLeft((int[][]) loadedObjects[4]);
-        } catch (Exception e) {
-            grassLayer.editLayer();
-        }
+    private LevelManager() {
     }
 
     public static void saveObjects(List<Object> objects, String fileName) {
@@ -65,29 +50,5 @@ public class LevelManager implements java.io.Serializable {
             e.printStackTrace();
         }
         return objects;
-    }
-
-    public GrassLayer getGrassLayer() {
-        return grassLayer;
-    }
-
-    public CollisionLayer getCollisionLayer() {
-        return collisionLayer;
-    }
-
-    public PlantingLayer getPlantingLayer() {
-        return plantingLayer;
-    }
-
-    public CropsLayer getCropsLayer() {
-        return cropsLayer;
-    }
-
-    public List<Object> getObjects() {
-        return objects;
-    }
-
-    public Object[] getLoadedObjects() {
-        return loadedObjects;
     }
 }

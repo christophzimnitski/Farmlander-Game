@@ -232,7 +232,7 @@ public class PlayState extends GameState {
             tog = 0;
         }
         collision = sCollision;
-        plantingLayer = new PlantingLayer(null); // editLayer/formatLayer don't use Level
+        plantingLayer = new PlantingLayer(); // editLayer/formatLayer drive the tilling autotile logic
         plantingLayer.setLayerArray(sPlanting);
         planting = plantingLayer.getLayerArray();
         grass = sGrass;

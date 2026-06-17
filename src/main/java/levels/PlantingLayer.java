@@ -1,6 +1,5 @@
 package levels;
 
-import main.Level;
 import org.jetbrains.annotations.NotNull;
 import utilz.LoadSave;
 
@@ -15,15 +14,13 @@ import java.util.stream.IntStream;
 import static utilz.Constants.Zoom.zoomMultiplier;
 
 public class PlantingLayer implements LayerInterface, Serializable {
-    private final Level level;
     int[][] layerArray = new int[40][22];
     Dictionary<Integer, BufferedImage> layerDictionary = new Hashtable<>();
     BufferedImage[][][] tileSets = {LoadSave.plowedSoilTileset};
     int[] plowedSoilType = IntStream.rangeClosed(1, 18).toArray();
     Object layerArrayObject = getLayerArray();
 
-    public PlantingLayer(Level level) {
-        this.level = level;
+    public PlantingLayer() {
     }
 
     public void drawLayer(Graphics g, float offsetX, float offsetY) {
