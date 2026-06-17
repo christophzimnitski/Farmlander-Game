@@ -350,16 +350,6 @@ public class PlayState extends GameState {
         SaveManager.save(ws, SaveManager.SAVE_FILE);
     }
 
-    /** Set a slot to at least {@code amount} of an item (existing slot, else first empty). DEV/testing aid. */
-    private void giveItem(int itemId, int amount) {
-        for (int i = 0; i < invItems.length; i++) {
-            if (invItems[i] == itemId) { invAmounts[i] = Math.max(invAmounts[i], amount); return; }
-        }
-        for (int i = 0; i < invItems.length; i++) {
-            if (invItems[i] == 0) { invItems[i] = itemId; invAmounts[i] = amount; return; }
-        }
-    }
-
     /** Load a classpath texture with Nearest filtering (crisp pixel art, no color softening). */
     private Texture loadTex(String path) {
         return assets.get(path); // lazy load + cache + dispose all handled by Assets
