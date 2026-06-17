@@ -166,6 +166,10 @@ public class PlayState extends GameState {
         int[] chopOrder = {5, 4, 3, 1, 0};
         TextureRegion[][] chopFrames = reorder(sliceActionRows128(chopTex, new int[]{46, 48, 50, 52}, 6), chopOrder);
         toolActions[1] = new ToolAction(chopFrames, chopOrder.length, -1, chopSize, chopOff, chopOff);
+        // Mining = the same oversized swing layout in player_mining.png (pickaxe): same reversed
+        // order and the same axe-less frame 2 glitch, so reuse the chop order/size/offset.
+        TextureRegion[][] mineFrames = reorder(sliceActionRows128(playerTex, new int[]{46, 48, 50, 52}, 6), chopOrder);
+        toolActions[2] = new ToolAction(mineFrames, chopOrder.length, -1, chopSize, chopOff, chopOff);
 
         invBarRegion = flippedFull(invBarTex);
         toggleRegion = flippedFull(toggleTex);
@@ -452,11 +456,12 @@ public class PlayState extends GameState {
             walkActions = playerAnimationArrays[toolIndex];
         }
 
-        // Facing (right > left > down > up), then pick the action from the current tool set.
-        if (up)    facing = 0;
-        if (down)  facing = 2;
-        if (left)  facing = 1;
-        if (right) facing = 3;
+        // Facing follows ACTUAL movement, so opposing keys (which cancel an axis) keep the
+        // current facing instead of flipping. Horizontal wins over vertical on diagonals.
+        if (iy < 0) facing = 0; // up
+        if (iy > 0) facing = 2; // down
+        if (ix < 0) facing = 1; // left
+        if (ix > 0) facing = 3; // right
         currentAction = walkActions[facing];
 
         // Q: trigger the current tool's Q-action animation (and its world effect, if any).
@@ -470,7 +475,7 @@ public class PlayState extends GameState {
             return;
         }
 
-        boolean moving = up || down || left || right;
+        boolean moving = ix != 0 || iy != 0;
         if (moving) {
             if (frameIndex == 0) frameIndex = 1;
             animTimer += delta;
