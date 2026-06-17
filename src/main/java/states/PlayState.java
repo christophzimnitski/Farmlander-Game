@@ -2,12 +2,19 @@ package states;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.OrthographicCamera;
+import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import com.badlogic.gdx.math.Vector3;
 import core.GameState;
 import core.GameStateManager;
+import crops.CropField;
+import crops.CropRegistry;
+import crops.CropType;
+import crops.PlantedCrop;
 import entities.Inventory;
 import levels.GrassLayer;
 import levels.LevelManager;
@@ -41,6 +48,10 @@ public class PlayState extends GameState {
     private static final float COLLISION_ERR = 0.45f;
     private static final int[] NON_COLLIDABLE = {7, 8, 9, 25, 26, 27, 43, 44, 45};
     private static final float DEPTH_OFFSET = 94.5f;
+    // Crops draw TILE wide x 2*TILE tall, centered on a plantable node — the shared corner of a 2x2
+    // block of tilled tiles. The plant's base sits at the node; foliage rises into the tiles above.
+    private static final float CROP_W = TILE, CROP_H = TILE * 2f;
+    private static final long DEFAULT_STAGE_MILLIS = 3000L; // 5 stages -> ~12s to mature (tunable per crop)
 
     private final OrthographicCamera camera;
     private final OrthographicCamera hudCam; // screen-space HUD, Y-down like the world
@@ -60,6 +71,16 @@ public class PlayState extends GameState {
     private final PlantingLayer plantingLayer; // reused for its editLayer/autotile logic
     private final int[] invItems, invAmounts;
     private int invToggle;
+
+    // Crop subsystem.
+    private final Texture cropsTex;
+    private final CropRegistry cropRegistry;
+    private final CropField cropField;
+    private final Texture whiteTex;          // 1x1 white pixel for the tile highlight (handmade, no ShapeRenderer)
+    private final TextureRegion whiteRegion;
+    private int hovCol = -1, hovRow = -1;    // tile under the mouse this frame
+    private boolean hovPlantable = false;    // hovered tile is tilled soil and empty
+    private final Vector3 mouseWorld = new Vector3();
 
     // Data-driven tool Q-actions, indexed by toolIndex (null = no action for that tool).
     private final ToolAction[] toolActions = new ToolAction[playerAnimationArrays.length];
@@ -227,6 +248,31 @@ public class PlayState extends GameState {
             if (Arrays.equals(playerAnimationArrays[i], walkActions)) { toolIndex = i; break; }
         }
         for (int i = 0; i < 4; i++) if (walkActions[i] == currentAction) { facing = i; break; }
+
+        // Crop subsystem: catalog from crops.png, an empty field sized to the world, and a 1x1
+        // white pixel for the hover highlight (kept on the main SpriteBatch — no ShapeRenderer).
+        cropsTex = loadTex("tilesets/crops.png");
+        cropRegistry = new CropRegistry(cropsTex, DEFAULT_STAGE_MILLIS);
+        cropField = new CropField(collision.length, collision[0].length);
+        Pixmap pm = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        pm.setColor(Color.WHITE);
+        pm.fill();
+        whiteTex = new Texture(pm);
+        pm.dispose();
+        whiteRegion = new TextureRegion(whiteTex);
+
+        // DEV: stock 10 potato seeds (crop 0 / item 100) so planting is easy to test.
+        giveItem(100, 10);
+    }
+
+    /** Set a slot to at least {@code amount} of an item (existing slot, else first empty). DEV/testing aid. */
+    private void giveItem(int itemId, int amount) {
+        for (int i = 0; i < invItems.length; i++) {
+            if (invItems[i] == itemId) { invAmounts[i] = Math.max(invAmounts[i], amount); return; }
+        }
+        for (int i = 0; i < invItems.length; i++) {
+            if (invItems[i] == 0) { invItems[i] = itemId; invAmounts[i] = amount; return; }
+        }
     }
 
     /** Load a classpath texture with Nearest filtering (crisp pixel art, no color softening). */
@@ -489,7 +535,61 @@ public class PlayState extends GameState {
             animTimer = 0;
         }
 
+        updateHover();
+        // Left-click a plantable tile to sow the selected seed; E harvests a mature crop under the mouse.
+        if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT) && hovPlantable) plantAtHover();
+        if (Gdx.input.isKeyJustPressed(Input.Keys.E)) harvestAtHover();
+
         updateCamera();
+    }
+
+    /** Resolve the plantable node under the mouse. A node sits at the shared corner of a 2x2 block of
+     *  tiles (index = the block's top-left tile) and is plantable when all four tiles are tilled soil
+     *  and the node is empty. */
+    private void updateHover() {
+        mouseWorld.set(Gdx.input.getX(), Gdx.input.getY(), 0);
+        camera.unproject(mouseWorld);
+        // The node whose center ((j+1)*TILE,(i+1)*TILE) the mouse falls nearest.
+        hovCol = (int) Math.floor((mouseWorld.x + TILE / 2f) / TILE) - 1;
+        hovRow = (int) Math.floor((mouseWorld.y + TILE / 2f) / TILE) - 1;
+        hovPlantable = isPlantableNode(hovCol, hovRow) && cropField.isOpen(hovCol, hovRow);
+    }
+
+    /** True when the 2x2 block of tiles with top-left (col,row) is entirely tilled soil. */
+    private boolean isPlantableNode(int col, int row) {
+        return tilledAt(col, row) && tilledAt(col + 1, row)
+                && tilledAt(col, row + 1) && tilledAt(col + 1, row + 1);
+    }
+
+    private boolean tilledAt(int col, int row) {
+        return col >= 0 && col < planting.length && row >= 0 && row < planting[0].length
+                && planting[col][row] >= 1;
+    }
+
+    /** Plant the selected seed (an inventory crop item) at the hovered tile, consuming one seed. */
+    private void plantAtHover() {
+        CropType seed = cropRegistry.byItemId(invItems[invToggle]);
+        if (seed == null || invAmounts[invToggle] <= 0) return; // no seed of the selected crop in hand
+        cropField.plant(hovCol, hovRow, seed, System.currentTimeMillis());
+        if (--invAmounts[invToggle] <= 0) { invAmounts[invToggle] = 0; invItems[invToggle] = 0; }
+    }
+
+    /** Harvest the hovered crop if it's mature: bank the produce and leave a hole that can be replanted. */
+    private void harvestAtHover() {
+        PlantedCrop crop = cropField.at(hovCol, hovRow);
+        if (crop == null || !crop.isMature(System.currentTimeMillis())) return;
+        addInventory(crop.type.itemId, 1);
+        crop.harvested = true; // now renders the hole frame; node is open for replanting
+    }
+
+    /** Add an item to the inventory: stack onto a matching slot, else fill the first empty slot. */
+    private void addInventory(int itemId, int amount) {
+        for (int i = 0; i < invItems.length; i++) {
+            if (invItems[i] == itemId) { invAmounts[i] += amount; return; }
+        }
+        for (int i = 0; i < invItems.length; i++) {
+            if (invItems[i] == 0) { invItems[i] = itemId; invAmounts[i] = amount; return; }
+        }
     }
 
     private void updateCamera() {
@@ -526,12 +626,50 @@ public class PlayState extends GameState {
         batch.begin();
         drawArray(batch, grass, grassRegions);
         drawArray(batch, planting, plantingRegions);
-        drawCollision(batch, false);
+        drawHighlight(batch);
+        drawCrops(batch, false);     // crops rooted above the player -> behind
+        drawCollision(batch, false); // bushes behind
         drawPlayer(batch);
-        drawCollision(batch, true);
+        drawCollision(batch, true);  // bushes in front
+        drawCrops(batch, true);      // crops rooted at/below the player -> in front
         batch.end();
 
         drawHud(batch);
+    }
+
+    /** Highlight the hovered tile: green when plantable, yellow when it holds a mature (harvestable) crop. */
+    private void drawHighlight(SpriteBatch batch) {
+        if (hovCol < 0 || hovRow < 0) return;
+        if (hovPlantable) {
+            batch.setColor(0.3f, 1f, 0.3f, 0.35f);
+        } else {
+            PlantedCrop crop = cropField.at(hovCol, hovRow);
+            if (crop == null || !crop.isMature(System.currentTimeMillis())) return;
+            batch.setColor(1f, 0.95f, 0.3f, 0.35f);
+        }
+        // A tile-sized highlight centered on the node (the middle of the 2x2 tilled block).
+        batch.draw(whiteRegion, hovCol * TILE + TILE / 2f, hovRow * TILE + TILE / 2f, TILE, TILE);
+        batch.setColor(Color.WHITE);
+    }
+
+    /** Draw planted crops at their current growth stage, depth-split around the player like the bushes. */
+    private void drawCrops(SpriteBatch batch, boolean inFront) {
+        long now = System.currentTimeMillis();
+        float feetY = playerY + HITBOX_OFF_Y;
+        for (int j = 0; j < cropField.cols(); j++) {
+            for (int i = 0; i < cropField.rows(); i++) {
+                PlantedCrop crop = cropField.at(j, i);
+                if (crop == null) continue;
+                float threshold = i * TILE + DEPTH_OFFSET;
+                boolean drawIt = inFront ? (feetY <= threshold) : (feetY >= threshold);
+                if (!drawIt) continue;
+                TextureRegion r = crop.type.stage(crop.stage(now));
+                // Centered on the node ((j+1)*TILE,(i+1)*TILE), nudged 1/4 tile lower so the base sits right.
+                // The post-harvest hole frame sits an extra 1/8 tile lower to line up with the others.
+                float y = i * TILE - TILE + TILE / 4f + (crop.harvested ? TILE / 8f : 0f);
+                batch.draw(r, j * TILE + TILE / 2f, y, CROP_W, CROP_H);
+            }
+        }
     }
 
     @Override
