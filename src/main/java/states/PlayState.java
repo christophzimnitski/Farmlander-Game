@@ -11,8 +11,12 @@ import core.GameStateManager;
 import entities.Inventory;
 import levels.GrassLayer;
 import levels.LevelManager;
+import levels.PlantingLayer;
+
+import static utilz.Constants.PlayerActionConstants.playerAnimationArrays;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,7 +45,7 @@ public class PlayState extends GameState {
     private final OrthographicCamera camera;
     private final OrthographicCamera hudCam; // screen-space HUD, Y-down like the world
 
-    private final Texture grassTex, plowedTex, tallGrassTex, wheatTex, youngWheatTex, playerTex;
+    private final Texture grassTex, plowedTex, tallGrassTex, wheatTex, youngWheatTex, playerTex, chopTex;
     private final Texture invBarTex, toggleTex, fontTex;
     private final TextureRegion[] grassRegions, plantingRegions, collisionRegions;
     private final TextureRegion[][] playerFrames;
@@ -53,11 +57,37 @@ public class PlayState extends GameState {
     private final List<Texture> foodTextures = new ArrayList<>();
 
     private final int[][] grass, planting, collision;
+    private final PlantingLayer plantingLayer; // reused for its editLayer/autotile logic
     private final int[] invItems, invAmounts;
-    private final int invToggle;
+    private int invToggle;
+
+    // Data-driven tool Q-actions, indexed by toolIndex (null = no action for that tool).
+    private final ToolAction[] toolActions = new ToolAction[playerAnimationArrays.length];
+    private ToolAction activeAction = null; // non-null while an action animation plays
+    private int actionDir = 2;              // captured facing for the active action
+    private int actionFrame = 0;
+    private float actionTimer = 0;
+    private boolean effectDone = false;
+
+    /** A tool's Q-action: per-direction frames, frame count, the frame it acts on the world
+     *  (-1 = none), and how big / where to draw (for oversized 128px swings). */
+    private static final class ToolAction {
+        final TextureRegion[][] frames; // [4 dirs: up,left,down,right][frameCount]
+        final int frameCount, effectFrame;
+        final float drawSize, offX, offY;
+        ToolAction(TextureRegion[][] frames, int frameCount, int effectFrame) {
+            this(frames, frameCount, effectFrame, PLAYER_SIZE, 0f, 0f);
+        }
+        ToolAction(TextureRegion[][] frames, int frameCount, int effectFrame, float drawSize, float offX, float offY) {
+            this.frames = frames; this.frameCount = frameCount; this.effectFrame = effectFrame;
+            this.drawSize = drawSize; this.offX = offX; this.offY = offY;
+        }
+    }
 
     private float playerX, playerY;
     private int[] walkActions;
+    private int toolIndex = 0;   // index into playerAnimationArrays (current tool)
+    private int facing = 2;      // 0 up, 1 left, 2 down, 3 right
     private int currentAction;
     private int frameIndex = 0;
     private float animTimer = 0;
@@ -71,15 +101,16 @@ public class PlayState extends GameState {
         hudCam = new OrthographicCamera();
         hudCam.setToOrtho(true, w, h);
 
-        grassTex      = new Texture(Gdx.files.classpath("tilesets/grassTileset.png"));
-        plowedTex     = new Texture(Gdx.files.classpath("tilesets/plowed_soil.png"));
-        tallGrassTex  = new Texture(Gdx.files.classpath("tilesets/tallgrass.png"));
-        wheatTex      = new Texture(Gdx.files.classpath("tilesets/wheat.png"));
-        youngWheatTex = new Texture(Gdx.files.classpath("tilesets/youngwheat.png"));
-        playerTex     = new Texture(Gdx.files.classpath("player_animations/player_mining.png"));
-        invBarTex     = new Texture(Gdx.files.classpath("ui/Inventory.png"));
-        toggleTex     = new Texture(Gdx.files.classpath("ui/toggle.png"));
-        fontTex       = new Texture(Gdx.files.classpath("ui/game_font.png"));
+        grassTex      = loadTex("tilesets/grassTileset.png");
+        plowedTex     = loadTex("tilesets/plowed_soil.png");
+        tallGrassTex  = loadTex("tilesets/tallgrass.png");
+        wheatTex      = loadTex("tilesets/wheat.png");
+        youngWheatTex = loadTex("tilesets/youngwheat.png");
+        playerTex     = loadTex("player_animations/player_mining.png");
+        chopTex       = loadTex("player_animations/player_chopping.png");
+        invBarTex     = loadTex("ui/Inventory.png");
+        toggleTex     = loadTex("ui/toggle.png");
+        fontTex       = loadTex("ui/game_font.png");
 
         grassRegions    = slice(grassTex, 1, 3);
         plantingRegions = slice(plowedTex, 6, 3);
@@ -105,6 +136,36 @@ public class PlayState extends GameState {
                 playerFrames[row][col] = r;
             }
         }
+
+        // Tool Q-actions (data-driven). Tilling reuses the mining sheet's TILLING rows
+        // (0..3 = up,left,down,right; 8 frames) and tills at frame 5. Watering plays the
+        // watering sheet's use rows (0..3, 7 frames) with no world effect yet.
+        TextureRegion[][] tillFrames = new TextureRegion[4][8];
+        for (int dir = 0; dir < 4; dir++)
+            System.arraycopy(playerFrames[dir], 0, tillFrames[dir], 0, 8);
+        toolActions[4] = new ToolAction(tillFrames, 8, 5);
+        // Watering = the mining sheet's WATERING rows (20..23 = up,left,down,right). The art
+        // has 8 frames (Swing's GetSpritesInAction said 4, which is why it looked abrupt).
+        TextureRegion[][] waterFrames = new TextureRegion[4][8];
+        int[] waterRows = {20, 21, 22, 23};
+        for (int dir = 0; dir < 4; dir++)
+            System.arraycopy(playerFrames[waterRows[dir]], 0, waterFrames[dir], 0, 8);
+        toolActions[3] = new ToolAction(waterFrames, 8, -1);
+        // Digging = the DIGGING rows (4..7 = up,left,down,right), 8 frames (shovel).
+        TextureRegion[][] digFrames = new TextureRegion[4][8];
+        int[] digRows = {4, 5, 6, 7};
+        for (int dir = 0; dir < 4; dir++)
+            System.arraycopy(playerFrames[digRows[dir]], 0, digFrames[dir], 0, 8);
+        toolActions[5] = new ToolAction(digFrames, 8, -1);
+        // Chopping = the oversized 128x128 axe swing at the bottom of player_chopping.png:
+        // up=46, left=48, down=50, right=52 (each 128 tall). The sheet's frames run in reverse,
+        // and frame index 2 has no axe (a sheet glitch) — so play [5,4,3,1,0]: axe overhead ->
+        // swing down -> impact low. Drawn at 480 (128*3.75), centered on the player.
+        float chopSize = PLAYER_SIZE * 2f;
+        float chopOff = -(chopSize - PLAYER_SIZE) / 2f;     // -120, centers the normal 240 footprint
+        int[] chopOrder = {5, 4, 3, 1, 0};
+        TextureRegion[][] chopFrames = reorder(sliceActionRows128(chopTex, new int[]{46, 48, 50, 52}, 6), chopOrder);
+        toolActions[1] = new ToolAction(chopFrames, chopOrder.length, -1, chopSize, chopOff, chopOff);
 
         invBarRegion = flippedFull(invBarTex);
         toggleRegion = flippedFull(toggleTex);
@@ -146,7 +207,9 @@ public class PlayState extends GameState {
             tog = 0;
         }
         collision = sCollision;
-        planting = sPlanting;
+        plantingLayer = new PlantingLayer(null); // editLayer/formatLayer don't use Level
+        plantingLayer.setLayerArray(sPlanting);
+        planting = plantingLayer.getLayerArray();
         grass = sGrass;
         invItems = items;
         invAmounts = amounts;
@@ -155,6 +218,18 @@ public class PlayState extends GameState {
         playerY = py;
         walkActions = (selected != null && selected.length == 4) ? selected : new int[]{32, 33, 34, 35};
         currentAction = (action >= 0 && action < 36) ? action : 34;
+        // Recover the tool index and facing from the saved state.
+        for (int i = 0; i < playerAnimationArrays.length; i++) {
+            if (Arrays.equals(playerAnimationArrays[i], walkActions)) { toolIndex = i; break; }
+        }
+        for (int i = 0; i < 4; i++) if (walkActions[i] == currentAction) { facing = i; break; }
+    }
+
+    /** Load a classpath texture with Nearest filtering (crisp pixel art, no color softening). */
+    private Texture loadTex(String path) {
+        Texture t = new Texture(Gdx.files.classpath(path));
+        t.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        return t;
     }
 
     private TextureRegion flippedFull(Texture tex) {
@@ -176,12 +251,55 @@ public class PlayState extends GameState {
         return regions;
     }
 
+    /** Slice 64px action frames from a sheet: frames[dir][f] for the given direction rows (Y-flipped, inset). */
+    private TextureRegion[][] sliceActionRows(Texture tex, int[] dirRows, int frameCount) {
+        float tw = tex.getWidth(), th = tex.getHeight(), pad = 0.5f;
+        TextureRegion[][] out = new TextureRegion[dirRows.length][frameCount];
+        for (int dir = 0; dir < dirRows.length; dir++) {
+            int row = dirRows[dir];
+            for (int f = 0; f < frameCount; f++) {
+                TextureRegion r = new TextureRegion(tex);
+                r.setRegion((f * 64 + pad) / tw, (row * 64 + pad) / th,
+                            ((f + 1) * 64 - pad) / tw, ((row + 1) * 64 - pad) / th);
+                r.flip(false, true);
+                out[dir][f] = r;
+            }
+        }
+        return out;
+    }
+
+    /** Re-map each direction's frames into a new order (e.g. reverse and/or drop bad frames). */
+    private TextureRegion[][] reorder(TextureRegion[][] frames, int[] order) {
+        TextureRegion[][] out = new TextureRegion[frames.length][order.length];
+        for (int dir = 0; dir < frames.length; dir++)
+            for (int i = 0; i < order.length; i++)
+                out[dir][i] = frames[dir][order[i]];
+        return out;
+    }
+
+    /** Slice oversized 128px action frames: frames[dir][f] from each direction's start row (Y-flipped). */
+    private TextureRegion[][] sliceActionRows128(Texture tex, int[] dirStartRows, int frameCount) {
+        float tw = tex.getWidth(), th = tex.getHeight(), pad = 0.5f;
+        TextureRegion[][] out = new TextureRegion[dirStartRows.length][frameCount];
+        for (int dir = 0; dir < dirStartRows.length; dir++) {
+            float y = dirStartRows[dir] * 64f;
+            for (int f = 0; f < frameCount; f++) {
+                float x = f * 128f;
+                TextureRegion r = new TextureRegion(tex);
+                r.setRegion((x + pad) / tw, (y + pad) / th, (x + 128 - pad) / tw, (y + 128 - pad) / th);
+                r.flip(false, true);
+                out[dir][f] = r;
+            }
+        }
+        return out;
+    }
+
     /** food/<id>.png loaded on demand (cached, null cached too so we don't retry). */
     private TextureRegion foodRegion(int id) {
         if (foodRegions.containsKey(id)) return foodRegions.get(id);
         TextureRegion region = null;
         try {
-            Texture t = new Texture(Gdx.files.classpath("food/" + id + ".png"));
+            Texture t = loadTex("food/" + id + ".png");
             foodTextures.add(t);
             region = new TextureRegion(t);
             region.flip(false, true);
@@ -282,11 +400,28 @@ public class PlayState extends GameState {
 
     @Override
     public void update(float delta) {
+        if (Gdx.input.isKeyPressed(Input.Keys.ESCAPE)) Gdx.app.exit();
+
+        // A tool Q-action is playing out: animate it, no movement.
+        if (activeAction != null) {
+            actionTimer += delta;
+            if (actionTimer >= ANIM_FRAME_TIME) {
+                actionTimer -= ANIM_FRAME_TIME;
+                actionFrame++;
+                if (actionFrame == activeAction.effectFrame && !effectDone) {
+                    performTill(actionDir);
+                    effectDone = true;
+                }
+                if (actionFrame >= activeAction.frameCount) activeAction = null;
+            }
+            updateCamera();
+            return;
+        }
+
         boolean up    = Gdx.input.isKeyPressed(Input.Keys.UP)    || Gdx.input.isKeyPressed(Input.Keys.W);
         boolean down  = Gdx.input.isKeyPressed(Input.Keys.DOWN)  || Gdx.input.isKeyPressed(Input.Keys.S);
         boolean left  = Gdx.input.isKeyPressed(Input.Keys.LEFT)  || Gdx.input.isKeyPressed(Input.Keys.A);
         boolean right = Gdx.input.isKeyPressed(Input.Keys.RIGHT) || Gdx.input.isKeyPressed(Input.Keys.D);
-        if (Gdx.input.isKeyPressed(Input.Keys.ESCAPE)) Gdx.app.exit();
 
         float d = MOVE_SPEED * delta;
         int ix = (right ? 1 : 0) - (left ? 1 : 0);
@@ -309,11 +444,31 @@ public class PlayState extends GameState {
 
         resolveCollisions();
 
-        // Facing: later assignments win (right > left > down > up), as in Swing.
-        if (up)    currentAction = walkActions[0];
-        if (down)  currentAction = walkActions[2];
-        if (left)  currentAction = walkActions[1];
-        if (right) currentAction = walkActions[3];
+        // Inventory selector (1/3) and tool cycling (2) — discrete presses.
+        if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_1)) invToggle = Math.max(0, invToggle - 1);
+        if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_3)) invToggle = Math.min(9, invToggle + 1);
+        if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_2)) {
+            toolIndex = (toolIndex + 1) % playerAnimationArrays.length;
+            walkActions = playerAnimationArrays[toolIndex];
+        }
+
+        // Facing (right > left > down > up), then pick the action from the current tool set.
+        if (up)    facing = 0;
+        if (down)  facing = 2;
+        if (left)  facing = 1;
+        if (right) facing = 3;
+        currentAction = walkActions[facing];
+
+        // Q: trigger the current tool's Q-action animation (and its world effect, if any).
+        if (Gdx.input.isKeyJustPressed(Input.Keys.Q) && toolActions[toolIndex] != null) {
+            activeAction = toolActions[toolIndex];
+            actionDir = facing;
+            actionFrame = 0;
+            actionTimer = 0;
+            effectDone = false;
+            updateCamera();
+            return;
+        }
 
         boolean moving = up || down || left || right;
         if (moving) {
@@ -329,8 +484,35 @@ public class PlayState extends GameState {
             animTimer = 0;
         }
 
+        updateCamera();
+    }
+
+    private void updateCamera() {
         camera.position.set(playerX + PLAYER_SIZE / 2f, playerY + PLAYER_SIZE / 2f, 0);
         camera.update();
+    }
+
+    /** Till the soil the player faces, reusing PlantingLayer's editLayer (amount 400 = a 2x2 plot). */
+    private void performTill(int dir) {
+        int px = (int) playerX, py = (int) playerY;
+        try {
+            switch (dir) { // 0 up, 1 left, 2 down, 3 right (offsets = Swing useTool * zoom 1.5)
+                case 0 -> plantingLayer.editLayer(px + 70, py + 48, 400);
+                case 1 -> plantingLayer.editLayer(px - 42, py + 156, 400);
+                case 2 -> plantingLayer.editLayer(px + 70, py + 192, 400);
+                case 3 -> plantingLayer.editLayer(px + 183, py + 156, 400);
+            }
+        } catch (Exception ignored) { /* tilling past the map edge — ignore OOB */ }
+    }
+
+    private void drawPlayer(SpriteBatch batch) {
+        if (activeAction != null) {
+            TextureRegion frame = activeAction.frames[actionDir][Math.min(actionFrame, activeAction.frameCount - 1)];
+            batch.draw(frame, playerX + activeAction.offX, playerY + activeAction.offY,
+                       activeAction.drawSize, activeAction.drawSize);
+        } else {
+            batch.draw(playerFrames[currentAction][frameIndex], playerX, playerY, PLAYER_SIZE, PLAYER_SIZE);
+        }
     }
 
     @Override
@@ -340,7 +522,7 @@ public class PlayState extends GameState {
         drawArray(batch, grass, grassRegions);
         drawArray(batch, planting, plantingRegions);
         drawCollision(batch, false);
-        batch.draw(playerFrames[currentAction][frameIndex], playerX, playerY, PLAYER_SIZE, PLAYER_SIZE);
+        drawPlayer(batch);
         drawCollision(batch, true);
         batch.end();
 
@@ -361,6 +543,7 @@ public class PlayState extends GameState {
         wheatTex.dispose();
         youngWheatTex.dispose();
         playerTex.dispose();
+        chopTex.dispose();
         invBarTex.dispose();
         toggleTex.dispose();
         fontTex.dispose();
