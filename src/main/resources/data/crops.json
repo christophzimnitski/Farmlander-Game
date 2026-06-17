@@ -4,401 +4,406 @@
     "name": "Potato",
     "spriteColumn": 0,
     "spriteTopRow": 0,
-    "stageDurations": [500, 500, 500, 500] 
+    "stageDurations": [
+      500,
+      500,
+      500,
+      500
+    ]
   },
   {
     "index": 1,
-    "name": "crop1",
+    "name": "Gold Potato",
     "spriteColumn": 1,
     "spriteTopRow": 0
   },
   {
     "index": 2,
-    "name": "crop2",
+    "name": "Purple Potato",
     "spriteColumn": 2,
     "spriteTopRow": 0
   },
   {
     "index": 3,
-    "name": "crop3",
+    "name": "Sweet Potato",
     "spriteColumn": 3,
     "spriteTopRow": 0
   },
   {
     "index": 4,
-    "name": "crop4",
+    "name": "Cassava",
     "spriteColumn": 4,
     "spriteTopRow": 0
   },
   {
     "index": 5,
-    "name": "crop5",
+    "name": "Daikon Radish",
     "spriteColumn": 5,
     "spriteTopRow": 0
   },
   {
     "index": 6,
-    "name": "crop6",
+    "name": "Carrot",
     "spriteColumn": 6,
     "spriteTopRow": 0
   },
   {
     "index": 7,
-    "name": "crop7",
+    "name": "Parsnip",
     "spriteColumn": 7,
     "spriteTopRow": 0
   },
   {
     "index": 8,
-    "name": "crop8",
+    "name": "Radish",
     "spriteColumn": 8,
     "spriteTopRow": 0
   },
   {
     "index": 9,
-    "name": "crop9",
+    "name": "Beet",
     "spriteColumn": 9,
     "spriteTopRow": 0
   },
   {
     "index": 10,
-    "name": "crop10",
+    "name": "Turnip",
     "spriteColumn": 10,
     "spriteTopRow": 0
   },
   {
     "index": 11,
-    "name": "crop11",
+    "name": "Rutabaga",
     "spriteColumn": 11,
     "spriteTopRow": 0
   },
   {
     "index": 12,
-    "name": "crop12",
+    "name": "Garlic",
     "spriteColumn": 12,
     "spriteTopRow": 0
   },
   {
     "index": 13,
-    "name": "crop13",
+    "name": "Yellow Onion",
     "spriteColumn": 13,
     "spriteTopRow": 0
   },
   {
     "index": 14,
-    "name": "crop14",
+    "name": "Red Onion",
     "spriteColumn": 14,
     "spriteTopRow": 0
   },
   {
     "index": 15,
-    "name": "crop15",
+    "name": "White Onion",
     "spriteColumn": 15,
     "spriteTopRow": 0
   },
   {
     "index": 16,
-    "name": "crop16",
+    "name": "Scallion",
     "spriteColumn": 16,
     "spriteTopRow": 0
   },
   {
     "index": 17,
-    "name": "crop17",
+    "name": "Hot Pepper",
     "spriteColumn": 17,
     "spriteTopRow": 0
   },
   {
     "index": 18,
-    "name": "crop18",
+    "name": "Green Bell Pepper",
     "spriteColumn": 18,
     "spriteTopRow": 0
   },
   {
     "index": 19,
-    "name": "crop19",
+    "name": "Red Bell Pepper",
     "spriteColumn": 19,
     "spriteTopRow": 0
   },
   {
     "index": 20,
-    "name": "crop20",
+    "name": "Orange Bell Pepper",
     "spriteColumn": 20,
     "spriteTopRow": 0
   },
   {
     "index": 21,
-    "name": "crop21",
+    "name": "Yellow Bell Pepper",
     "spriteColumn": 21,
     "spriteTopRow": 0
   },
   {
     "index": 22,
-    "name": "crop22",
+    "name": "Yellow Bell Pepper",
     "spriteColumn": 22,
     "spriteTopRow": 0
   },
   {
     "index": 23,
-    "name": "crop23",
+    "name": "Chili Pepper",
     "spriteColumn": 23,
     "spriteTopRow": 0
   },
   {
     "index": 24,
-    "name": "crop24",
+    "name": "Watermelon",
     "spriteColumn": 24,
     "spriteTopRow": 0
   },
   {
     "index": 25,
-    "name": "crop25",
+    "name": "Honeydew",
     "spriteColumn": 25,
     "spriteTopRow": 0
   },
   {
     "index": 26,
-    "name": "crop26",
+    "name": "Cantaloupe",
     "spriteColumn": 26,
     "spriteTopRow": 0
   },
   {
     "index": 27,
-    "name": "crop27",
+    "name": "Acorn Squash",
     "spriteColumn": 27,
     "spriteTopRow": 0
   },
   {
     "index": 28,
-    "name": "crop28",
+    "name": "Pumpkin",
     "spriteColumn": 28,
     "spriteTopRow": 0
   },
   {
     "index": 29,
-    "name": "crop29",
+    "name": "Crookneck Squash",
     "spriteColumn": 29,
     "spriteTopRow": 0
   },
   {
     "index": 30,
-    "name": "crop30",
+    "name": "Butternut Squash",
     "spriteColumn": 30,
     "spriteTopRow": 0
   },
   {
     "index": 31,
-    "name": "crop31",
+    "name": "Corn",
     "spriteColumn": 31,
     "spriteTopRow": 0
   },
   {
     "index": 32,
-    "name": "crop32",
+    "name": "Asparagus",
     "spriteColumn": 0,
     "spriteTopRow": 5
   },
   {
     "index": 33,
-    "name": "crop33",
+    "name": "Rhubarb",
     "spriteColumn": 1,
     "spriteTopRow": 5
   },
   {
     "index": 34,
-    "name": "crop34",
+    "name": "Romaine Lettuce",
     "spriteColumn": 2,
     "spriteTopRow": 5
   },
   {
     "index": 35,
-    "name": "crop35",
+    "name": "Iceberg Lettuce",
     "spriteColumn": 3,
     "spriteTopRow": 5
   },
   {
     "index": 36,
-    "name": "crop36",
+    "name": "Kale",
     "spriteColumn": 4,
     "spriteTopRow": 5
   },
   {
     "index": 37,
-    "name": "crop37",
+    "name": "Red Cabbage",
     "spriteColumn": 5,
     "spriteTopRow": 5
   },
   {
     "index": 38,
-    "name": "crop38",
+    "name": "Cabbage",
     "spriteColumn": 6,
     "spriteTopRow": 5
   },
   {
     "index": 39,
-    "name": "crop39",
+    "name": "Celery",
     "spriteColumn": 7,
     "spriteTopRow": 5
   },
   {
     "index": 40,
-    "name": "crop40",
+    "name": "Bok Choy",
     "spriteColumn": 8,
     "spriteTopRow": 5
   },
   {
     "index": 41,
-    "name": "crop41",
+    "name": "Fennel Bulb",
     "spriteColumn": 9,
     "spriteTopRow": 5
   },
   {
     "index": 42,
-    "name": "crop42",
+    "name": "Brussels Sprouts",
     "spriteColumn": 10,
     "spriteTopRow": 5
   },
   {
     "index": 43,
-    "name": "crop43",
+    "name": "Cauliflower",
     "spriteColumn": 11,
     "spriteTopRow": 5
   },
   {
     "index": 44,
-    "name": "crop44",
+    "name": "Broccoli",
     "spriteColumn": 12,
     "spriteTopRow": 5
   },
   {
     "index": 45,
-    "name": "crop45",
+    "name": "Artichoke",
     "spriteColumn": 13,
     "spriteTopRow": 5
   },
   {
     "index": 46,
-    "name": "crop46",
+    "name": "Leek",
     "spriteColumn": 14,
     "spriteTopRow": 5
   },
   {
     "index": 47,
-    "name": "crop47",
+    "name": "Kohlrabi",
     "spriteColumn": 15,
     "spriteTopRow": 5
   },
   {
     "index": 48,
-    "name": "crop48",
+    "name": "Eggplant",
     "spriteColumn": 16,
     "spriteTopRow": 5
   },
   {
     "index": 49,
-    "name": "crop49",
+    "name": "Zucchini",
     "spriteColumn": 17,
     "spriteTopRow": 5
   },
   {
     "index": 50,
-    "name": "crop50",
+    "name": "Yellow Squash",
     "spriteColumn": 18,
     "spriteTopRow": 5
   },
   {
     "index": 51,
-    "name": "crop51",
+    "name": "Cucumber",
     "spriteColumn": 19,
     "spriteTopRow": 5
   },
   {
     "index": 52,
-    "name": "crop52",
+    "name": "Strawberry",
     "spriteColumn": 20,
     "spriteTopRow": 5
   },
   {
     "index": 53,
-    "name": "crop53",
+    "name": "Blackberry",
     "spriteColumn": 21,
     "spriteTopRow": 5
   },
   {
     "index": 54,
-    "name": "crop54",
+    "name": "Yellow Bell Pepper",
     "spriteColumn": 22,
     "spriteTopRow": 5
   },
   {
     "index": 55,
-    "name": "crop55",
+    "name": "Raspberry",
     "spriteColumn": 23,
     "spriteTopRow": 5
   },
   {
     "index": 56,
-    "name": "crop56",
+    "name": "Blueberry",
     "spriteColumn": 24,
     "spriteTopRow": 5
   },
   {
     "index": 57,
-    "name": "crop57",
+    "name": "Grapes",
     "spriteColumn": 25,
     "spriteTopRow": 5
   },
   {
     "index": 58,
-    "name": "crop58",
+    "name": "Green Grapes",
     "spriteColumn": 26,
     "spriteTopRow": 5
   },
   {
     "index": 59,
-    "name": "crop59",
+    "name": "Cherry Tomatoes",
     "spriteColumn": 27,
     "spriteTopRow": 5
   },
   {
     "index": 60,
-    "name": "crop60",
+    "name": "Tomato",
     "spriteColumn": 28,
     "spriteTopRow": 5
   },
   {
     "index": 61,
-    "name": "crop61",
+    "name": "Large Tomato",
     "spriteColumn": 29,
     "spriteTopRow": 5
   },
   {
     "index": 62,
-    "name": "crop62",
+    "name": "Peas",
     "spriteColumn": 30,
     "spriteTopRow": 5
   },
   {
     "index": 63,
-    "name": "crop63",
+    "name": "Hops",
     "spriteColumn": 31,
     "spriteTopRow": 5
   },
   {
     "index": 64,
-    "name": "crop64",
+    "name": "Coffee",
     "spriteColumn": 29,
     "spriteTopRow": 10
   },
   {
     "index": 65,
-    "name": "crop65",
+    "name": "Pineapple",
     "spriteColumn": 30,
     "spriteTopRow": 10
   },
   {
     "index": 66,
-    "name": "crop66",
+    "name": "Kiwi",
     "spriteColumn": 31,
     "spriteTopRow": 10
   }

@@ -42,6 +42,30 @@ public final class DefaultCropDataSource implements CropDataSource {
     /** Total crops the sheet holds: two full bands plus the short last band. */
     public static final int CROP_COUNT = LAST_BAND * CROPS_PER_BAND + LAST_BAND_CROP_COUNT; // 67
 
+    /**
+     * Display names in crop-index order, carried over verbatim from the original project's crop catalog
+     * (the old {@code CropsLayer}). Index == sprite column, so each name describes the tile actually
+     * drawn. Two entries are intentional duplicates: the original art/code mapped both column 21 and 22
+     * of each full band to "Yellow Bell Pepper", leaving indices 22 and 54 without a distinct name.
+     */
+    static final String[] CROP_NAMES = {
+            // band 0 (indices 0-31)
+            "Potato", "Gold Potato", "Purple Potato", "Sweet Potato", "Cassava", "Daikon Radish",
+            "Carrot", "Parsnip", "Radish", "Beet", "Turnip", "Rutabaga", "Garlic", "Yellow Onion",
+            "Red Onion", "White Onion", "Scallion", "Hot Pepper", "Green Bell Pepper", "Red Bell Pepper",
+            "Orange Bell Pepper", "Yellow Bell Pepper", "Yellow Bell Pepper", "Chili Pepper", "Watermelon",
+            "Honeydew", "Cantaloupe", "Acorn Squash", "Pumpkin", "Crookneck Squash", "Butternut Squash",
+            "Corn",
+            // band 1 (indices 32-63)
+            "Asparagus", "Rhubarb", "Romaine Lettuce", "Iceberg Lettuce", "Kale", "Red Cabbage", "Cabbage",
+            "Celery", "Bok Choy", "Fennel Bulb", "Brussels Sprouts", "Cauliflower", "Broccoli", "Artichoke",
+            "Leek", "Kohlrabi", "Eggplant", "Zucchini", "Yellow Squash", "Cucumber", "Strawberry",
+            "Blackberry", "Yellow Bell Pepper", "Raspberry", "Blueberry", "Grapes", "Green Grapes",
+            "Cherry Tomatoes", "Tomato", "Large Tomato", "Peas", "Hops",
+            // band 2 (indices 64-66)
+            "Coffee", "Pineapple", "Kiwi",
+    };
+
     @Override
     public CropBlueprint[] loadCropBlueprints() {
         CropBlueprint[] blueprints = new CropBlueprint[CROP_COUNT];
@@ -53,9 +77,8 @@ public final class DefaultCropDataSource implements CropDataSource {
             // Full bands start at column 0; the short last band is shifted to its trailing columns.
             int spriteColumn = (band == LAST_BAND) ? LAST_BAND_FIRST_COLUMN + columnInBand : columnInBand;
 
-            String name = (index == 0) ? "Potato" : "crop" + index;
             // null durations -> registry default for every stage
-            blueprints[index] = new CropBlueprint(index, name, spriteColumn, spriteTopRow, null);
+            blueprints[index] = new CropBlueprint(index, CROP_NAMES[index], spriteColumn, spriteTopRow, null);
         }
         return blueprints;
     }
