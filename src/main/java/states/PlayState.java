@@ -25,8 +25,10 @@ import items.data.DefaultItemDataSource;
 import items.data.ItemDataSource;
 import items.data.JsonItemDataSource;
 import levels.GrassLayer;
-import levels.LevelManager;
 import levels.PlantingLayer;
+import save.CropSave;
+import save.SaveManager;
+import save.WorldSave;
 import tools.data.DefaultToolActionDataSource;
 import tools.data.JsonToolActionDataSource;
 import tools.data.ToolActionDataSource;
@@ -200,48 +202,60 @@ public class PlayState extends GameState {
         }
 
         int[][] sCollision, sPlanting, sGrass;
-        float px = 2000, py = 800;
-        int action = 34;
-        int[] selected = {32, 33, 34, 35};
-        Inventory inv;
-        // New crop field is persisted at indices [10..14] as parallel primitive arrays (null when the
-        // save predates crop persistence — old saves stop at index 9).
-        int[] sCropCols = null, sCropRows = null, sCropTypes = null;
-        long[] sCropPlanted = null;
-        boolean[] sCropHarvested = null;
-        try {
-            List<Object> save = LevelManager.loadObjects(LevelManager.SAVE_FILE);
-            sCollision = (int[][]) save.get(0);
-            sPlanting  = (int[][]) save.get(1);
-            sGrass     = (int[][]) save.get(2);
-            inv = (Inventory) save.get(5);
-            px = (Float) save.get(6);
-            py = (Float) save.get(7);
-            selected = (int[]) save.get(8);
-            action = (Integer) save.get(9);
-            if (save.size() >= 15) {
-                sCropCols      = (int[]) save.get(10);
-                sCropRows      = (int[]) save.get(11);
-                sCropTypes     = (int[]) save.get(12);
-                sCropPlanted   = (long[]) save.get(13);
-                sCropHarvested = (boolean[]) save.get(14);
-            }
-        } catch (Exception e) {
+        float px, py;
+        int action;
+        int[] selected;
+        int[] sInvItems, sInvAmounts;
+        int sInvToggle;
+        // Crops read from the save (null when there's no save → none to restore).
+        CropSave[] sCrops;
+        // One read through the swappable SaveFormat seam: SaveManager picks binary vs. the legacy
+        // positional Java-serialization reader by sniffing the file's magic, so old saves migrate.
+        WorldSave ws = SaveManager.load(SaveManager.SAVE_FILE);
+        if (ws != null) {
+            sCollision = ws.collision;
+            sPlanting  = ws.planting;
+            sGrass     = ws.grass;
+            sInvItems  = ws.invItems;
+            sInvAmounts = ws.invAmounts;
+            sInvToggle = ws.invToggle;
+            px = ws.playerX;
+            py = ws.playerY;
+            selected = ws.walkActions;
+            action = ws.currentAction;
+            sCrops = ws.crops;
+        } else {
             GrassLayer fallback = new GrassLayer();
             fallback.editLayer();
             sGrass = fallback.getLayerArray();
             sPlanting = new int[40][22];
             sCollision = new int[40][22];
-            inv = new Inventory(10);
+            sInvItems = null;
+            sInvAmounts = null;
+            sInvToggle = 0;
+            px = 2000;
+            py = 800;
+            action = 34;
+            selected = new int[]{32, 33, 34, 35};
+            sCrops = null;
         }
         collision = sCollision;
         plantingLayer = new PlantingLayer(); // editLayer/formatLayer drive the tilling autotile logic
         plantingLayer.setLayerArray(sPlanting);
         planting = plantingLayer.getLayerArray();
         grass = sGrass;
-        inventory = inv;
-        invItems = inv.getInventory();      // shared refs: mutating these mutates the saved Inventory
+        // Rebuild the live Inventory from saved primitives (it's no longer serialized directly).
+        Inventory inv = new Inventory(sInvItems != null ? sInvItems.length : 10);
+        invItems = inv.getInventory();      // shared refs: mutating these mutates the live Inventory
         invAmounts = inv.getInventoryAmounts();
+        if (sInvItems != null) {
+            for (int i = 0; i < invItems.length && i < sInvItems.length; i++) {
+                invItems[i] = sInvItems[i];
+                invAmounts[i] = sInvAmounts[i];
+            }
+        }
+        inv.toggle(sInvToggle - inv.getToggle());
+        inventory = inv;
         invToggle = inv.getToggle();
         playerX = px;
         playerY = py;
@@ -283,7 +297,7 @@ public class PlayState extends GameState {
         for (int i = 0; i < cropTypes.length; i++) cropTypes[i] = cropRegistry.get(i);
         itemRegistry = new ItemRegistry(itemData.loadItems(), cropTypes);
         cropField = new CropField(collision.length, collision[0].length);
-        if (sCropCols != null) restoreCrops(sCropCols, sCropRows, sCropTypes, sCropPlanted, sCropHarvested);
+        if (sCrops != null) restoreCrops(sCrops);
         Pixmap pm = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
         pm.setColor(Color.WHITE);
         pm.fill();
@@ -293,66 +307,47 @@ public class PlayState extends GameState {
 
     }
 
-    /** Repopulate the crop field from the parallel arrays read out of the save. */
-    private void restoreCrops(int[] cols, int[] rows, int[] types, long[] planted, boolean[] harvested) {
-        int n = Math.min(Math.min(cols.length, rows.length),
-                         Math.min(types.length, Math.min(planted.length, harvested.length)));
-        for (int k = 0; k < n; k++) {
-            CropType type = cropRegistry.get(types[k]);
+    /** Repopulate the crop field from the crops read out of the save. */
+    private void restoreCrops(CropSave[] crops) {
+        for (CropSave s : crops) {
+            CropType type = cropRegistry.get(s.type);
             if (type == null) continue; // a crop id that no longer exists in the catalog — drop it
-            cropField.plant(cols[k], rows[k], type, planted[k]);
-            PlantedCrop c = cropField.at(cols[k], rows[k]);
-            if (c != null) c.harvested = harvested[k];
+            cropField.plant(s.col, s.row, type, s.planted);
+            PlantedCrop c = cropField.at(s.col, s.row);
+            if (c != null) c.harvested = s.harvested;
         }
     }
 
     /**
-     * Persist the world back to the save file in the same positional format the loader reads.
-     * Indices [0..9] match the Swing layout (so a save still round-trips); [10..14] are the new crop
-     * field as parallel primitive arrays. Called on a clean exit (see {@link #dispose}); a SIGKILL
-     * (e.g. the dev pkill-relaunch) skips it, which is fine — only deliberate quits should save.
+     * Persist the world to the save file via the {@link SaveManager}/{@link SaveFormat} seam (binary).
+     * Builds a plain {@link WorldSave} snapshot — no engine objects, no Java serialization. Called on a
+     * clean exit (see {@link #dispose}); a SIGKILL (e.g. the dev pkill-relaunch) skips it, which is fine
+     * — only deliberate quits should save.
      */
     private void saveGame() {
-        // Fold the live toggle selection back into the Inventory object (item/amount arrays are shared
-        // refs, already current). toggle() applies a delta and clamps, landing exactly on invToggle.
-        inventory.toggle(invToggle - inventory.getToggle());
+        WorldSave ws = new WorldSave();
+        ws.playerX = playerX;
+        ws.playerY = playerY;
+        ws.currentAction = currentAction;
+        ws.walkActions = walkActions;
+        ws.invItems = invItems;       // shared live refs — already current
+        ws.invAmounts = invAmounts;
+        ws.invToggle = invToggle;
+        ws.collision = collision;
+        ws.planting = planting;
+        ws.grass = grass;
 
-        // Flatten the crop grid into parallel primitive arrays (serialization-safe — no PlantedCrop or
-        // CropType, which hold non-serializable TextureRegions).
-        int count = 0;
-        for (int j = 0; j < cropField.cols(); j++)
-            for (int i = 0; i < cropField.rows(); i++)
-                if (cropField.at(j, i) != null) count++;
-        int[] cCols = new int[count], cRows = new int[count], cTypes = new int[count];
-        long[] cPlanted = new long[count];
-        boolean[] cHarvested = new boolean[count];
-        int k = 0;
+        // Snapshot the crop grid as plain CropSave records (no PlantedCrop/CropType, which hold textures).
+        List<CropSave> crops = new ArrayList<>();
         for (int j = 0; j < cropField.cols(); j++)
             for (int i = 0; i < cropField.rows(); i++) {
                 PlantedCrop c = cropField.at(j, i);
                 if (c == null) continue;
-                cCols[k] = j; cRows[k] = i; cTypes[k] = c.type.index;
-                cPlanted[k] = c.plantedAt; cHarvested[k] = c.harvested; k++;
+                crops.add(new CropSave(j, i, c.type.index, c.plantedAt, c.harvested));
             }
+        ws.crops = crops.toArray(new CropSave[0]);
 
-        int rows = collision.length == 0 ? 0 : collision[0].length;
-        List<Object> objs = new ArrayList<>();
-        objs.add(collision);                          // [0]
-        objs.add(planting);                           // [1]
-        objs.add(grass);                              // [2]
-        objs.add(new int[collision.length][rows]);    // [3] old crop format (dead) — zeros to hold the slot
-        objs.add(new int[collision.length][rows]);    // [4] old timesLeft (dead)
-        objs.add(inventory);                          // [5]
-        objs.add(playerX);                            // [6] Float
-        objs.add(playerY);                            // [7] Float
-        objs.add(walkActions);                        // [8] selected animation array
-        objs.add(currentAction);                      // [9] Integer
-        objs.add(cCols);                              // [10] crop columns
-        objs.add(cRows);                              // [11] crop rows
-        objs.add(cTypes);                             // [12] crop type indices
-        objs.add(cPlanted);                           // [13] crop plant timestamps
-        objs.add(cHarvested);                         // [14] crop harvested flags
-        LevelManager.saveObjects(objs, LevelManager.SAVE_FILE);
+        SaveManager.save(ws, SaveManager.SAVE_FILE);
     }
 
     /** Set a slot to at least {@code amount} of an item (existing slot, else first empty). DEV/testing aid. */
