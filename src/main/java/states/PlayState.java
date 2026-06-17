@@ -363,11 +363,18 @@ public class PlayState extends GameState {
     }
 
     private TextureRegion[] slice(Texture texture, int rows, int cols) {
+        // Half-texel inset on each edge (matches the player/crop slicers): with Nearest filtering at a
+        // fractional camera position, sampling exactly on a 32px tile boundary can pick up the adjacent
+        // atlas tile and paint a 1px seam over the tile. Insetting keeps every sample inside this tile.
+        float tw = texture.getWidth(), th = texture.getHeight(), pad = 0.5f;
         TextureRegion[] regions = new TextureRegion[rows * cols + 1];
         int k = 1;
         for (int row = 0; row < rows; row++) {
             for (int col = 0; col < cols; col++) {
-                TextureRegion r = new TextureRegion(texture, col * 32, row * 32, 32, 32);
+                int sx = col * 32, sy = row * 32;
+                TextureRegion r = new TextureRegion(texture);
+                r.setRegion((sx + pad) / tw, (sy + pad) / th,
+                            (sx + 32 - pad) / tw, (sy + 32 - pad) / th);
                 r.flip(false, true);
                 regions[k++] = r;
             }
