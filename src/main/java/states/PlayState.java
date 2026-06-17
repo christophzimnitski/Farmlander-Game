@@ -15,6 +15,9 @@ import crops.CropField;
 import crops.CropRegistry;
 import crops.CropType;
 import crops.PlantedCrop;
+import crops.data.CropDataSource;
+import crops.data.DefaultCropDataSource;
+import crops.data.JsonCropDataSource;
 import entities.Inventory;
 import levels.GrassLayer;
 import levels.LevelManager;
@@ -47,11 +50,15 @@ public class PlayState extends GameState {
     private static final float HITBOX_W = 90f, HITBOX_H = 48f;
     private static final float COLLISION_ERR = 0.45f;
     private static final int[] NON_COLLIDABLE = {7, 8, 9, 25, 26, 27, 43, 44, 45};
-    private static final float DEPTH_OFFSET = 94.5f;
+    // Bush depth line. Tracks the collision box, which was raised by TILE/8 (see collidesAt/resolveBox),
+    // so the player's resting position stays on the "draw in front" side and bushes don't paint over him.
+    private static final float DEPTH_OFFSET = 82.5f; // 94.5 - TILE/8
     // Crops draw TILE wide x 2*TILE tall, centered on a plantable node — the shared corner of a 2x2
     // block of tilled tiles. The plant's base sits at the node; foliage rises into the tiles above.
     private static final float CROP_W = TILE, CROP_H = TILE * 2f;
     private static final long DEFAULT_STAGE_MILLIS = 3000L; // 5 stages -> ~12s to mature (tunable per crop)
+    // A planted crop blocks the player with a small solid footprint centered on its base (the node corner).
+    private static final float CROP_COLL_W = 48f, CROP_COLL_H = 24f; // narrower L/R, ~1/4 tile shorter T/B
 
     private final OrthographicCamera camera;
     private final OrthographicCamera hudCam; // screen-space HUD, Y-down like the world
@@ -71,6 +78,7 @@ public class PlayState extends GameState {
     private final PlantingLayer plantingLayer; // reused for its editLayer/autotile logic
     private final int[] invItems, invAmounts;
     private int invToggle;
+    private final Inventory inventory; // the live save object; its item/amount arrays are invItems/invAmounts
 
     // Crop subsystem.
     private final Texture cropsTex;
@@ -206,39 +214,46 @@ public class PlayState extends GameState {
         float px = 2000, py = 800;
         int action = 34;
         int[] selected = {32, 33, 34, 35};
-        int[] items, amounts;
-        int tog;
+        Inventory inv;
+        // New crop field is persisted at indices [10..14] as parallel primitive arrays (null when the
+        // save predates crop persistence — old saves stop at index 9).
+        int[] sCropCols = null, sCropRows = null, sCropTypes = null;
+        long[] sCropPlanted = null;
+        boolean[] sCropHarvested = null;
         try {
             List<Object> save = LevelManager.loadObjects(LevelManager.SAVE_FILE);
             sCollision = (int[][]) save.get(0);
             sPlanting  = (int[][]) save.get(1);
             sGrass     = (int[][]) save.get(2);
-            Inventory inv = (Inventory) save.get(5);
-            items = inv.getInventory();
-            amounts = inv.getInventoryAmounts();
-            tog = inv.getToggle();
+            inv = (Inventory) save.get(5);
             px = (Float) save.get(6);
             py = (Float) save.get(7);
             selected = (int[]) save.get(8);
             action = (Integer) save.get(9);
+            if (save.size() >= 15) {
+                sCropCols      = (int[]) save.get(10);
+                sCropRows      = (int[]) save.get(11);
+                sCropTypes     = (int[]) save.get(12);
+                sCropPlanted   = (long[]) save.get(13);
+                sCropHarvested = (boolean[]) save.get(14);
+            }
         } catch (Exception e) {
             GrassLayer fallback = new GrassLayer();
             fallback.editLayer();
             sGrass = fallback.getLayerArray();
             sPlanting = new int[40][22];
             sCollision = new int[40][22];
-            items = new int[10];
-            amounts = new int[10];
-            tog = 0;
+            inv = new Inventory(10);
         }
         collision = sCollision;
         plantingLayer = new PlantingLayer(); // editLayer/formatLayer drive the tilling autotile logic
         plantingLayer.setLayerArray(sPlanting);
         planting = plantingLayer.getLayerArray();
         grass = sGrass;
-        invItems = items;
-        invAmounts = amounts;
-        invToggle = tog;
+        inventory = inv;
+        invItems = inv.getInventory();      // shared refs: mutating these mutates the saved Inventory
+        invAmounts = inv.getInventoryAmounts();
+        invToggle = inv.getToggle();
         playerX = px;
         playerY = py;
         walkActions = (selected != null && selected.length == 4) ? selected : new int[]{32, 33, 34, 35};
@@ -252,8 +267,20 @@ public class PlayState extends GameState {
         // Crop subsystem: catalog from crops.png, an empty field sized to the world, and a 1x1
         // white pixel for the hover highlight (kept on the main SpriteBatch — no ShapeRenderer).
         cropsTex = loadTex("tilesets/crops.png");
-        cropRegistry = new CropRegistry(cropsTex, DEFAULT_STAGE_MILLIS);
+        // Crop definitions come from data (data/crops.json via libGDX Json), behind a swappable
+        // CropDataSource seam. If the file is missing/unparseable, fall back to the built-in catalog
+        // so crops never break.
+        CropDataSource cropData;
+        try {
+            CropDataSource json = new JsonCropDataSource(Gdx.files.classpath("data/crops.json"));
+            json.loadCrops(); // probe: force a parse now so a bad file trips the fallback here
+            cropData = json;
+        } catch (Exception e) {
+            cropData = new DefaultCropDataSource();
+        }
+        cropRegistry = new CropRegistry(cropsTex, cropData.loadCrops(), DEFAULT_STAGE_MILLIS);
         cropField = new CropField(collision.length, collision[0].length);
+        if (sCropCols != null) restoreCrops(sCropCols, sCropRows, sCropTypes, sCropPlanted, sCropHarvested);
         Pixmap pm = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
         pm.setColor(Color.WHITE);
         pm.fill();
@@ -263,6 +290,68 @@ public class PlayState extends GameState {
 
         // DEV: stock 10 potato seeds (crop 0 / item 100) so planting is easy to test.
         giveItem(100, 10);
+    }
+
+    /** Repopulate the crop field from the parallel arrays read out of the save. */
+    private void restoreCrops(int[] cols, int[] rows, int[] types, long[] planted, boolean[] harvested) {
+        int n = Math.min(Math.min(cols.length, rows.length),
+                         Math.min(types.length, Math.min(planted.length, harvested.length)));
+        for (int k = 0; k < n; k++) {
+            CropType type = cropRegistry.get(types[k]);
+            if (type == null) continue; // a crop id that no longer exists in the catalog — drop it
+            cropField.plant(cols[k], rows[k], type, planted[k]);
+            PlantedCrop c = cropField.at(cols[k], rows[k]);
+            if (c != null) c.harvested = harvested[k];
+        }
+    }
+
+    /**
+     * Persist the world back to the save file in the same positional format the loader reads.
+     * Indices [0..9] match the Swing layout (so a save still round-trips); [10..14] are the new crop
+     * field as parallel primitive arrays. Called on a clean exit (see {@link #dispose}); a SIGKILL
+     * (e.g. the dev pkill-relaunch) skips it, which is fine — only deliberate quits should save.
+     */
+    private void saveGame() {
+        // Fold the live toggle selection back into the Inventory object (item/amount arrays are shared
+        // refs, already current). toggle() applies a delta and clamps, landing exactly on invToggle.
+        inventory.toggle(invToggle - inventory.getToggle());
+
+        // Flatten the crop grid into parallel primitive arrays (serialization-safe — no PlantedCrop or
+        // CropType, which hold non-serializable TextureRegions).
+        int count = 0;
+        for (int j = 0; j < cropField.cols(); j++)
+            for (int i = 0; i < cropField.rows(); i++)
+                if (cropField.at(j, i) != null) count++;
+        int[] cCols = new int[count], cRows = new int[count], cTypes = new int[count];
+        long[] cPlanted = new long[count];
+        boolean[] cHarvested = new boolean[count];
+        int k = 0;
+        for (int j = 0; j < cropField.cols(); j++)
+            for (int i = 0; i < cropField.rows(); i++) {
+                PlantedCrop c = cropField.at(j, i);
+                if (c == null) continue;
+                cCols[k] = j; cRows[k] = i; cTypes[k] = c.type.index;
+                cPlanted[k] = c.plantedAt; cHarvested[k] = c.harvested; k++;
+            }
+
+        int rows = collision.length == 0 ? 0 : collision[0].length;
+        List<Object> objs = new ArrayList<>();
+        objs.add(collision);                          // [0]
+        objs.add(planting);                           // [1]
+        objs.add(grass);                              // [2]
+        objs.add(new int[collision.length][rows]);    // [3] old crop format (dead) — zeros to hold the slot
+        objs.add(new int[collision.length][rows]);    // [4] old timesLeft (dead)
+        objs.add(inventory);                          // [5]
+        objs.add(playerX);                            // [6] Float
+        objs.add(playerY);                            // [7] Float
+        objs.add(walkActions);                        // [8] selected animation array
+        objs.add(currentAction);                      // [9] Integer
+        objs.add(cCols);                              // [10] crop columns
+        objs.add(cRows);                              // [11] crop rows
+        objs.add(cTypes);                             // [12] crop type indices
+        objs.add(cPlanted);                           // [13] crop plant timestamps
+        objs.add(cHarvested);                         // [14] crop harvested flags
+        LevelManager.saveObjects(objs, LevelManager.SAVE_FILE);
     }
 
     /** Set a slot to at least {@code amount} of an item (existing slot, else first empty). DEV/testing aid. */
@@ -370,13 +459,33 @@ public class PlayState extends GameState {
             for (int i = 0; i < collision[j].length; i++) {
                 int v = collision[j][i];
                 if (v < 1 || isNonCollidable(v)) continue;
-                float tx = j * TILE, ty = i * TILE;
-                if (hx < tx + TILE && hx + HITBOX_W > tx && hy < ty + TILE && hy + HITBOX_H > ty) {
-                    return true;
-                }
+                if (hitboxOverlaps(hx, hy, j * TILE, i * TILE - TILE / 8f, TILE, TILE)) return true;
+            }
+        }
+        // Planted crops (not yet harvested) are solid too.
+        for (int j = 0; j < cropField.cols(); j++) {
+            for (int i = 0; i < cropField.rows(); i++) {
+                PlantedCrop crop = cropField.at(j, i);
+                if (crop == null || crop.harvested) continue;
+                if (hitboxOverlaps(hx, hy, cropBoxX(j), cropBoxY(i), CROP_COLL_W, CROP_COLL_H)) return true;
             }
         }
         return false;
+    }
+
+    private boolean hitboxOverlaps(float hx, float hy, float bx, float by, float bw, float bh) {
+        return hx < bx + bw && hx + HITBOX_W > bx && hy < by + bh && hy + HITBOX_H > by;
+    }
+
+    // A crop in cell (col,row) has a solid footprint box centered on its node corner. Single source
+    // for that geometry so collision and the pre-plant guard can never drift apart.
+    private float cropBoxX(int col) { return (col + 1) * TILE - CROP_COLL_W / 2f; }
+    private float cropBoxY(int row) { return (row + 1) * TILE - CROP_COLL_H / 2f; }
+
+    /** Would a crop planted in cell (col,row) immediately overlap the player where they stand now? */
+    private boolean playerOverlapsCropCell(int col, int row) {
+        return hitboxOverlaps(playerX + HITBOX_OFF_X, playerY + HITBOX_OFF_Y,
+                              cropBoxX(col), cropBoxY(row), CROP_COLL_W, CROP_COLL_H);
     }
 
     private void resolveCollisions() {
@@ -384,20 +493,31 @@ public class PlayState extends GameState {
             for (int i = 0; i < collision[j].length; i++) {
                 int v = collision[j][i];
                 if (v < 1 || isNonCollidable(v)) continue;
-                float tx = j * TILE, ty = i * TILE;
-                float hx = playerX + HITBOX_OFF_X, hy = playerY + HITBOX_OFF_Y;
-                float ix = Math.max(hx, tx), iy = Math.max(hy, ty);
-                float ix2 = Math.min(hx + HITBOX_W, tx + TILE), iy2 = Math.min(hy + HITBOX_H, ty + TILE);
-                if (ix >= ix2 || iy >= iy2) continue;
-                float overlapW = ix2 - ix, overlapH = iy2 - iy;
-                float pushH = overlapH + COLLISION_ERR, pushW = overlapW + COLLISION_ERR;
-                if (overlapW > pushH) {
-                    if (iy > hy) playerY -= pushH; else playerY += pushH;
-                }
-                if (overlapH > pushW) {
-                    if (ix > hx) playerX -= pushW; else playerX += pushW;
-                }
+                resolveBox(j * TILE, i * TILE - TILE / 8f, TILE, TILE);
             }
+        }
+        for (int j = 0; j < cropField.cols(); j++) {
+            for (int i = 0; i < cropField.rows(); i++) {
+                PlantedCrop crop = cropField.at(j, i);
+                if (crop == null || crop.harvested) continue;
+                resolveBox(cropBoxX(j), cropBoxY(i), CROP_COLL_W, CROP_COLL_H);
+            }
+        }
+    }
+
+    /** Push the player out of a solid box (bx,by,bw,bh) along the smaller overlap axis. */
+    private void resolveBox(float bx, float by, float bw, float bh) {
+        float hx = playerX + HITBOX_OFF_X, hy = playerY + HITBOX_OFF_Y;
+        float ix = Math.max(hx, bx), iy = Math.max(hy, by);
+        float ix2 = Math.min(hx + HITBOX_W, bx + bw), iy2 = Math.min(hy + HITBOX_H, by + bh);
+        if (ix >= ix2 || iy >= iy2) return;
+        float overlapW = ix2 - ix, overlapH = iy2 - iy;
+        float pushH = overlapH + COLLISION_ERR, pushW = overlapW + COLLISION_ERR;
+        if (overlapW > pushH) {
+            if (iy > hy) playerY -= pushH; else playerY += pushH;
+        }
+        if (overlapH > pushW) {
+            if (ix > hx) playerX -= pushW; else playerX += pushW;
         }
     }
 
@@ -441,8 +561,20 @@ public class PlayState extends GameState {
                 if (food != null) {
                     batch.draw(food, invX + i * slot + w / 120f, invY + h / 80f, invW / 15f, invH / 1.5f);
                 }
-                int amt = Math.max(0, Math.min(10, invAmounts[i]));
-                batch.draw(numberRegions[amt], invX + i * slot + w / 32f, invY + h / 18f, invW / 50f, invH / 7f);
+                // Draw the amount digit by digit (the font row is "-123456789 0 -", so digit d is at
+                // glyph index d, except 0 which lives at index 10). This shows 10+ instead of a lone "0".
+                // Each glyph cell is drawn glyphW wide but the digit only fills its middle ~50%, so advance
+                // by ~0.6*glyphW: the cells overlap only in their transparent padding, giving tight digits.
+                String digits = Integer.toString(Math.max(0, invAmounts[i]));
+                float glyphW = invW / 50f, adv = glyphW * 0.6f;
+                float numX = invX + i * slot + w / 32f, numY = invY + h / 18f;
+                // Right-align: the ones digit stays anchored at numX, extra digits grow to the left, so
+                // the ones place lines up whether the amount is 1 or 2+ digits (9 -> 10 doesn't shift).
+                for (int d = 0; d < digits.length(); d++) {
+                    int digit = digits.charAt(d) - '0';
+                    float x = numX - (digits.length() - 1 - d) * adv;
+                    batch.draw(numberRegions[digit == 0 ? 10 : digit], x, numY, glyphW, invH / 7f);
+                }
             }
         }
         batch.end();
@@ -552,7 +684,8 @@ public class PlayState extends GameState {
         // The node whose center ((j+1)*TILE,(i+1)*TILE) the mouse falls nearest.
         hovCol = (int) Math.floor((mouseWorld.x + TILE / 2f) / TILE) - 1;
         hovRow = (int) Math.floor((mouseWorld.y + TILE / 2f) / TILE) - 1;
-        hovPlantable = isPlantableNode(hovCol, hovRow) && cropField.isOpen(hovCol, hovRow);
+        hovPlantable = isPlantableNode(hovCol, hovRow) && cropField.isOpen(hovCol, hovRow)
+                     && !playerOverlapsCropCell(hovCol, hovRow);
     }
 
     /** True when the 2x2 block of tiles with top-left (col,row) is entirely tilled soil. */
@@ -660,13 +793,16 @@ public class PlayState extends GameState {
             for (int i = 0; i < cropField.rows(); i++) {
                 PlantedCrop crop = cropField.at(j, i);
                 if (crop == null) continue;
-                float threshold = i * TILE + DEPTH_OFFSET;
+                // Centered on the node ((j+1)*TILE,(i+1)*TILE), nudged 1/4 tile lower so the base sits right.
+                // The post-harvest hole frame sits an extra 1/8 tile lower to line up with the others.
+                float cropTop = i * TILE - TILE + TILE / 4f;
+                float y = cropTop + (crop.harvested ? TILE / 8f : 0f);
+                // Depth ground-line: the player goes in front of the crop once their feet pass ~2/3 down
+                // the 2-tile-tall sprite. This is the old CropsLayer mask (feetY <= column*TILE + 100*zoom).
+                float threshold = cropTop + CROP_H * (126f / 192f);
                 boolean drawIt = inFront ? (feetY <= threshold) : (feetY >= threshold);
                 if (!drawIt) continue;
                 TextureRegion r = crop.type.stage(crop.stage(now));
-                // Centered on the node ((j+1)*TILE,(i+1)*TILE), nudged 1/4 tile lower so the base sits right.
-                // The post-harvest hole frame sits an extra 1/8 tile lower to line up with the others.
-                float y = i * TILE - TILE + TILE / 4f + (crop.harvested ? TILE / 8f : 0f);
                 batch.draw(r, j * TILE + TILE / 2f, y, CROP_W, CROP_H);
             }
         }
@@ -680,6 +816,8 @@ public class PlayState extends GameState {
 
     @Override
     public void dispose() {
+        // Persist first, but never let a save error block resource cleanup on shutdown.
+        try { saveGame(); } catch (Exception e) { e.printStackTrace(); }
         grassTex.dispose();
         plowedTex.dispose();
         tallGrassTex.dispose();

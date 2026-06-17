@@ -1,0 +1,405 @@
+[
+  {
+    "index": 0,
+    "name": "Potato",
+    "sheetCol": 0,
+    "sheetRow": 0,
+    "stageDurations": [500, 500, 500, 500] 
+  },
+  {
+    "index": 1,
+    "name": "crop1",
+    "sheetCol": 1,
+    "sheetRow": 0
+  },
+  {
+    "index": 2,
+    "name": "crop2",
+    "sheetCol": 2,
+    "sheetRow": 0
+  },
+  {
+    "index": 3,
+    "name": "crop3",
+    "sheetCol": 3,
+    "sheetRow": 0
+  },
+  {
+    "index": 4,
+    "name": "crop4",
+    "sheetCol": 4,
+    "sheetRow": 0
+  },
+  {
+    "index": 5,
+    "name": "crop5",
+    "sheetCol": 5,
+    "sheetRow": 0
+  },
+  {
+    "index": 6,
+    "name": "crop6",
+    "sheetCol": 6,
+    "sheetRow": 0
+  },
+  {
+    "index": 7,
+    "name": "crop7",
+    "sheetCol": 7,
+    "sheetRow": 0
+  },
+  {
+    "index": 8,
+    "name": "crop8",
+    "sheetCol": 8,
+    "sheetRow": 0
+  },
+  {
+    "index": 9,
+    "name": "crop9",
+    "sheetCol": 9,
+    "sheetRow": 0
+  },
+  {
+    "index": 10,
+    "name": "crop10",
+    "sheetCol": 10,
+    "sheetRow": 0
+  },
+  {
+    "index": 11,
+    "name": "crop11",
+    "sheetCol": 11,
+    "sheetRow": 0
+  },
+  {
+    "index": 12,
+    "name": "crop12",
+    "sheetCol": 12,
+    "sheetRow": 0
+  },
+  {
+    "index": 13,
+    "name": "crop13",
+    "sheetCol": 13,
+    "sheetRow": 0
+  },
+  {
+    "index": 14,
+    "name": "crop14",
+    "sheetCol": 14,
+    "sheetRow": 0
+  },
+  {
+    "index": 15,
+    "name": "crop15",
+    "sheetCol": 15,
+    "sheetRow": 0
+  },
+  {
+    "index": 16,
+    "name": "crop16",
+    "sheetCol": 16,
+    "sheetRow": 0
+  },
+  {
+    "index": 17,
+    "name": "crop17",
+    "sheetCol": 17,
+    "sheetRow": 0
+  },
+  {
+    "index": 18,
+    "name": "crop18",
+    "sheetCol": 18,
+    "sheetRow": 0
+  },
+  {
+    "index": 19,
+    "name": "crop19",
+    "sheetCol": 19,
+    "sheetRow": 0
+  },
+  {
+    "index": 20,
+    "name": "crop20",
+    "sheetCol": 20,
+    "sheetRow": 0
+  },
+  {
+    "index": 21,
+    "name": "crop21",
+    "sheetCol": 21,
+    "sheetRow": 0
+  },
+  {
+    "index": 22,
+    "name": "crop22",
+    "sheetCol": 22,
+    "sheetRow": 0
+  },
+  {
+    "index": 23,
+    "name": "crop23",
+    "sheetCol": 23,
+    "sheetRow": 0
+  },
+  {
+    "index": 24,
+    "name": "crop24",
+    "sheetCol": 24,
+    "sheetRow": 0
+  },
+  {
+    "index": 25,
+    "name": "crop25",
+    "sheetCol": 25,
+    "sheetRow": 0
+  },
+  {
+    "index": 26,
+    "name": "crop26",
+    "sheetCol": 26,
+    "sheetRow": 0
+  },
+  {
+    "index": 27,
+    "name": "crop27",
+    "sheetCol": 27,
+    "sheetRow": 0
+  },
+  {
+    "index": 28,
+    "name": "crop28",
+    "sheetCol": 28,
+    "sheetRow": 0
+  },
+  {
+    "index": 29,
+    "name": "crop29",
+    "sheetCol": 29,
+    "sheetRow": 0
+  },
+  {
+    "index": 30,
+    "name": "crop30",
+    "sheetCol": 30,
+    "sheetRow": 0
+  },
+  {
+    "index": 31,
+    "name": "crop31",
+    "sheetCol": 31,
+    "sheetRow": 0
+  },
+  {
+    "index": 32,
+    "name": "crop32",
+    "sheetCol": 0,
+    "sheetRow": 5
+  },
+  {
+    "index": 33,
+    "name": "crop33",
+    "sheetCol": 1,
+    "sheetRow": 5
+  },
+  {
+    "index": 34,
+    "name": "crop34",
+    "sheetCol": 2,
+    "sheetRow": 5
+  },
+  {
+    "index": 35,
+    "name": "crop35",
+    "sheetCol": 3,
+    "sheetRow": 5
+  },
+  {
+    "index": 36,
+    "name": "crop36",
+    "sheetCol": 4,
+    "sheetRow": 5
+  },
+  {
+    "index": 37,
+    "name": "crop37",
+    "sheetCol": 5,
+    "sheetRow": 5
+  },
+  {
+    "index": 38,
+    "name": "crop38",
+    "sheetCol": 6,
+    "sheetRow": 5
+  },
+  {
+    "index": 39,
+    "name": "crop39",
+    "sheetCol": 7,
+    "sheetRow": 5
+  },
+  {
+    "index": 40,
+    "name": "crop40",
+    "sheetCol": 8,
+    "sheetRow": 5
+  },
+  {
+    "index": 41,
+    "name": "crop41",
+    "sheetCol": 9,
+    "sheetRow": 5
+  },
+  {
+    "index": 42,
+    "name": "crop42",
+    "sheetCol": 10,
+    "sheetRow": 5
+  },
+  {
+    "index": 43,
+    "name": "crop43",
+    "sheetCol": 11,
+    "sheetRow": 5
+  },
+  {
+    "index": 44,
+    "name": "crop44",
+    "sheetCol": 12,
+    "sheetRow": 5
+  },
+  {
+    "index": 45,
+    "name": "crop45",
+    "sheetCol": 13,
+    "sheetRow": 5
+  },
+  {
+    "index": 46,
+    "name": "crop46",
+    "sheetCol": 14,
+    "sheetRow": 5
+  },
+  {
+    "index": 47,
+    "name": "crop47",
+    "sheetCol": 15,
+    "sheetRow": 5
+  },
+  {
+    "index": 48,
+    "name": "crop48",
+    "sheetCol": 16,
+    "sheetRow": 5
+  },
+  {
+    "index": 49,
+    "name": "crop49",
+    "sheetCol": 17,
+    "sheetRow": 5
+  },
+  {
+    "index": 50,
+    "name": "crop50",
+    "sheetCol": 18,
+    "sheetRow": 5
+  },
+  {
+    "index": 51,
+    "name": "crop51",
+    "sheetCol": 19,
+    "sheetRow": 5
+  },
+  {
+    "index": 52,
+    "name": "crop52",
+    "sheetCol": 20,
+    "sheetRow": 5
+  },
+  {
+    "index": 53,
+    "name": "crop53",
+    "sheetCol": 21,
+    "sheetRow": 5
+  },
+  {
+    "index": 54,
+    "name": "crop54",
+    "sheetCol": 22,
+    "sheetRow": 5
+  },
+  {
+    "index": 55,
+    "name": "crop55",
+    "sheetCol": 23,
+    "sheetRow": 5
+  },
+  {
+    "index": 56,
+    "name": "crop56",
+    "sheetCol": 24,
+    "sheetRow": 5
+  },
+  {
+    "index": 57,
+    "name": "crop57",
+    "sheetCol": 25,
+    "sheetRow": 5
+  },
+  {
+    "index": 58,
+    "name": "crop58",
+    "sheetCol": 26,
+    "sheetRow": 5
+  },
+  {
+    "index": 59,
+    "name": "crop59",
+    "sheetCol": 27,
+    "sheetRow": 5
+  },
+  {
+    "index": 60,
+    "name": "crop60",
+    "sheetCol": 28,
+    "sheetRow": 5
+  },
+  {
+    "index": 61,
+    "name": "crop61",
+    "sheetCol": 29,
+    "sheetRow": 5
+  },
+  {
+    "index": 62,
+    "name": "crop62",
+    "sheetCol": 30,
+    "sheetRow": 5
+  },
+  {
+    "index": 63,
+    "name": "crop63",
+    "sheetCol": 31,
+    "sheetRow": 5
+  },
+  {
+    "index": 64,
+    "name": "crop64",
+    "sheetCol": 29,
+    "sheetRow": 10
+  },
+  {
+    "index": 65,
+    "name": "crop65",
+    "sheetCol": 30,
+    "sheetRow": 10
+  },
+  {
+    "index": 66,
+    "name": "crop66",
+    "sheetCol": 31,
+    "sheetRow": 10
+  }
+]

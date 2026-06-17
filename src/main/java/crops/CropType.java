@@ -20,13 +20,34 @@ public final class CropType {
     public final long[] stageDurations;    // length = stages.length - 1
     public final int itemId;
 
+    /** Build a crop with every stage taking the same default time. */
     public CropType(int index, String name, TextureRegion[] stages, long defaultStageMillis) {
+        this(index, name, stages, durationsFilled(stages.length, defaultStageMillis));
+    }
+
+    /**
+     * Build a crop with explicit per-stage growth times (data-driven). {@code stageDurations} should
+     * have length {@code stages.length - 1}; if it's null or a different length it's normalized so
+     * any missing stage falls back to the first supplied value (or 0 when none are supplied).
+     */
+    public CropType(int index, String name, TextureRegion[] stages, long[] stageDurations) {
         this.index = index;
         this.name = name;
         this.stages = stages;
         this.itemId = 100 + index;
-        this.stageDurations = new long[Math.max(0, stages.length - 1)];
-        Arrays.fill(this.stageDurations, defaultStageMillis);
+        int need = Math.max(0, stages.length - 1);
+        this.stageDurations = new long[need];
+        long fallback = (stageDurations != null && stageDurations.length > 0) ? stageDurations[0] : 0L;
+        for (int i = 0; i < need; i++) {
+            this.stageDurations[i] = (stageDurations != null && i < stageDurations.length)
+                    ? stageDurations[i] : fallback;
+        }
+    }
+
+    private static long[] durationsFilled(int stageCount, long millis) {
+        long[] d = new long[Math.max(0, stageCount - 1)];
+        Arrays.fill(d, millis);
+        return d;
     }
 
     public int stageCount() {

@@ -3,44 +3,50 @@ package crops;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 
+import crops.data.CropDef;
+
 /**
- * Builds the catalog of crop types by slicing {@code tilesets/crops.png}.
+ * Builds the catalog of crop types from data definitions ({@link CropDef}) by slicing the growth
+ * frames out of {@code tilesets/crops.png}.
  *
- * <p>The sheet is a grid of 32px-wide x 64px-tall tiles: 32 columns (one per crop) and 15 rows
- * grouped into three 5-row bands. A crop's five growth stages are stacked vertically within its
- * band. The 67 crops map to the sheet as:
- * <ul>
- *   <li>crops 0..31  -> band rows 0..4,   column = index</li>
- *   <li>crops 32..63 -> band rows 5..9,   column = index-32</li>
- *   <li>crops 64..66 -> band rows 10..14, column = 29 + (index-64)</li>
- * </ul>
- * (This is the clean form of the old {@code makeCropsArrays}, dropping its duplicate/out-of-range
- * frame bugs.) Frames carry the same half-texel inset + y-flip as the rest of the renderer.
+ * <p>The sheet is a grid of 32px-wide x 64px-tall tiles; each crop's {@link #STAGES} growth stages
+ * are stacked vertically starting at {@code (def.sheetCol, def.sheetRow)}. The slice math (half-texel
+ * inset + y-flip) matches the rest of the renderer. <em>Where the defs come from</em> — JSON file,
+ * built-in defaults, etc. — is the caller's concern (see {@code crops.data.CropDataSource}); this
+ * class only turns defs into live {@link CropType}s.
  */
 public final class CropRegistry {
-    public static final int CROP_COUNT = 67;
     public static final int STAGES = 5;
     private static final int TILE_W = 32, TILE_H = 64;
 
-    private final CropType[] types = new CropType[CROP_COUNT];
+    private final CropType[] types;
 
-    public CropRegistry(Texture sheet, long defaultStageMillis) {
+    /**
+     * @param sheet              the crops spritesheet to slice frames from
+     * @param defs               crop definitions; each is placed at {@code types[def.index]}
+     * @param defaultStageMillis growth time per stage for any def that doesn't specify its own
+     */
+    public CropRegistry(Texture sheet, CropDef[] defs, long defaultStageMillis) {
+        int size = 0;
+        for (CropDef d : defs) size = Math.max(size, d.index + 1);
+        types = new CropType[size];
+
         float tw = sheet.getWidth(), th = sheet.getHeight(), pad = 0.5f;
-        for (int c = 0; c < CROP_COUNT; c++) {
-            int group = c < 32 ? 0 : c < 64 ? 1 : 2;
-            int bandRow = group * STAGES;                                   // 0, 5, 10
-            int col = group == 0 ? c : group == 1 ? c - 32 : 29 + (c - 64); // sheet column
-
+        for (CropDef def : defs) {
             TextureRegion[] stages = new TextureRegion[STAGES];
             for (int s = 0; s < STAGES; s++) {
-                int sx = col * TILE_W, sy = (bandRow + s) * TILE_H;
+                int sx = def.sheetCol * TILE_W, sy = (def.sheetRow + s) * TILE_H;
                 TextureRegion r = new TextureRegion(sheet);
                 r.setRegion((sx + pad) / tw, (sy + pad) / th,
                             (sx + TILE_W - pad) / tw, (sy + TILE_H - pad) / th);
                 r.flip(false, true);
                 stages[s] = r;
             }
-            types[c] = new CropType(c, "crop" + c, stages, defaultStageMillis);
+            // null stageDurations -> CropType fills every stage with defaultStageMillis.
+            long[] durations = def.stageDurations;
+            types[def.index] = (durations != null)
+                    ? new CropType(def.index, def.name, stages, durations)
+                    : new CropType(def.index, def.name, stages, defaultStageMillis);
         }
     }
 
@@ -49,7 +55,7 @@ public final class CropRegistry {
     }
 
     public CropType get(int index) {
-        return (index >= 0 && index < types.length) ? types[index] : null;
+        return (index >= 0 && index < types.length && types[index] != null) ? types[index] : null;
     }
 
     /** The crop whose seed/produce is the given inventory item id (100 + index), or null. */
