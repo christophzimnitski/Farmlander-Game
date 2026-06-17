@@ -22,6 +22,10 @@ import entities.Inventory;
 import levels.GrassLayer;
 import levels.LevelManager;
 import levels.PlantingLayer;
+import tools.data.DefaultToolActionDataSource;
+import tools.data.JsonToolActionDataSource;
+import tools.data.ToolActionDataSource;
+import tools.data.ToolActionDef;
 
 import static utilz.Constants.PlayerActionConstants.playerAnimationArrays;
 
@@ -99,17 +103,16 @@ public class PlayState extends GameState {
     private boolean effectDone = false;
 
     /** A tool's Q-action: per-direction frames, frame count, the frame it acts on the world
-     *  (-1 = none), and how big / where to draw (for oversized 128px swings). */
+     *  (-1 = none) and what that effect is, and how big / where to draw (for oversized 128px swings). */
     private static final class ToolAction {
         final TextureRegion[][] frames; // [4 dirs: up,left,down,right][frameCount]
         final int frameCount, effectFrame;
+        final String effect;            // world effect to fire at effectFrame ("till", or null/none)
         final float drawSize, offX, offY;
-        ToolAction(TextureRegion[][] frames, int frameCount, int effectFrame) {
-            this(frames, frameCount, effectFrame, PLAYER_SIZE, 0f, 0f);
-        }
-        ToolAction(TextureRegion[][] frames, int frameCount, int effectFrame, float drawSize, float offX, float offY) {
+        ToolAction(TextureRegion[][] frames, int frameCount, int effectFrame, String effect,
+                   float drawSize, float offX, float offY) {
             this.frames = frames; this.frameCount = frameCount; this.effectFrame = effectFrame;
-            this.drawSize = drawSize; this.offX = offX; this.offY = offY;
+            this.effect = effect; this.drawSize = drawSize; this.offX = offX; this.offY = offY;
         }
     }
 
@@ -166,39 +169,18 @@ public class PlayState extends GameState {
             }
         }
 
-        // Tool Q-actions (data-driven). Tilling reuses the mining sheet's TILLING rows
-        // (0..3 = up,left,down,right; 8 frames) and tills at frame 5. Watering plays the
-        // watering sheet's use rows (0..3, 7 frames) with no world effect yet.
-        TextureRegion[][] tillFrames = new TextureRegion[4][8];
-        for (int dir = 0; dir < 4; dir++)
-            System.arraycopy(playerFrames[dir], 0, tillFrames[dir], 0, 8);
-        toolActions[4] = new ToolAction(tillFrames, 8, 5);
-        // Watering = the mining sheet's WATERING rows (20..23 = up,left,down,right). The art
-        // has 8 frames (Swing's GetSpritesInAction said 4, which is why it looked abrupt).
-        TextureRegion[][] waterFrames = new TextureRegion[4][8];
-        int[] waterRows = {20, 21, 22, 23};
-        for (int dir = 0; dir < 4; dir++)
-            System.arraycopy(playerFrames[waterRows[dir]], 0, waterFrames[dir], 0, 8);
-        toolActions[3] = new ToolAction(waterFrames, 8, -1);
-        // Digging = the DIGGING rows (4..7 = up,left,down,right), 8 frames (shovel).
-        TextureRegion[][] digFrames = new TextureRegion[4][8];
-        int[] digRows = {4, 5, 6, 7};
-        for (int dir = 0; dir < 4; dir++)
-            System.arraycopy(playerFrames[digRows[dir]], 0, digFrames[dir], 0, 8);
-        toolActions[5] = new ToolAction(digFrames, 8, -1);
-        // Chopping = the oversized 128x128 axe swing at the bottom of player_chopping.png:
-        // up=46, left=48, down=50, right=52 (each 128 tall). The sheet's frames run in reverse,
-        // and frame index 2 has no axe (a sheet glitch) — so play [5,4,3,1,0]: axe overhead ->
-        // swing down -> impact low. Drawn at 480 (128*3.75), centered on the player.
-        float chopSize = PLAYER_SIZE * 2f;
-        float chopOff = -(chopSize - PLAYER_SIZE) / 2f;     // -120, centers the normal 240 footprint
-        int[] chopOrder = {5, 4, 3, 1, 0};
-        TextureRegion[][] chopFrames = reorder(sliceActionRows128(chopTex, new int[]{46, 48, 50, 52}, 6), chopOrder);
-        toolActions[1] = new ToolAction(chopFrames, chopOrder.length, -1, chopSize, chopOff, chopOff);
-        // Mining = the same oversized swing layout in player_mining.png (pickaxe): same reversed
-        // order and the same axe-less frame 2 glitch, so reuse the chop order/size/offset.
-        TextureRegion[][] mineFrames = reorder(sliceActionRows128(playerTex, new int[]{46, 48, 50, 52}, 6), chopOrder);
-        toolActions[2] = new ToolAction(mineFrames, chopOrder.length, -1, chopSize, chopOff, chopOff);
+        // Tool Q-actions are data-driven (data/tool_actions.json via libGDX Json), behind the same
+        // swappable ToolActionDataSource seam as crops. The probe forces a parse now so a
+        // missing/unparseable file falls back to the built-in catalog here, not mid-game.
+        ToolActionDataSource toolData;
+        try {
+            ToolActionDataSource json = new JsonToolActionDataSource(Gdx.files.classpath("data/tool_actions.json"));
+            json.loadToolActions(); // probe
+            toolData = json;
+        } catch (Exception e) {
+            toolData = new DefaultToolActionDataSource();
+        }
+        for (ToolActionDef def : toolData.loadToolActions()) buildToolAction(def);
 
         invBarRegion = flippedFull(invBarTex);
         toggleRegion = flippedFull(toggleTex);
@@ -288,8 +270,6 @@ public class PlayState extends GameState {
         pm.dispose();
         whiteRegion = new TextureRegion(whiteTex);
 
-        // DEV: stock 10 potato seeds (crop 0 / item 100) so planting is easy to test.
-        giveItem(100, 10);
     }
 
     /** Repopulate the crop field from the parallel arrays read out of the save. */
@@ -431,6 +411,22 @@ public class PlayState extends GameState {
             }
         }
         return out;
+    }
+
+    /** Turn a data {@link ToolActionDef} into a live {@link ToolAction}, slicing from the named sheet
+     *  with the same helpers the hardcoded version used. */
+    private void buildToolAction(ToolActionDef def) {
+        if (def == null || def.toolIndex < 0 || def.toolIndex >= toolActions.length) return;
+        Texture sheet = "chopping".equals(def.sheet) ? chopTex : playerTex;
+        TextureRegion[][] frames = def.oversized
+                ? sliceActionRows128(sheet, def.dirRows, def.rawFrames)
+                : sliceActionRows(sheet, def.dirRows, def.rawFrames);
+        if (def.order != null) frames = reorder(frames, def.order);
+        int frameCount = (def.order != null) ? def.order.length : def.rawFrames;
+        // Oversized swings draw at 2x, centered on the normal footprint; standard actions draw 1:1.
+        float drawSize = def.oversized ? PLAYER_SIZE * 2f : PLAYER_SIZE;
+        float off = -(drawSize - PLAYER_SIZE) / 2f;
+        toolActions[def.toolIndex] = new ToolAction(frames, frameCount, def.effectFrame, def.effect, drawSize, off, off);
     }
 
     /** food/<id>.png loaded on demand (cached, null cached too so we don't retry). */
@@ -591,7 +587,7 @@ public class PlayState extends GameState {
                 actionTimer -= ANIM_FRAME_TIME;
                 actionFrame++;
                 if (actionFrame == activeAction.effectFrame && !effectDone) {
-                    performTill(actionDir);
+                    applyActionEffect(activeAction.effect, actionDir);
                     effectDone = true;
                 }
                 if (actionFrame >= activeAction.frameCount) activeAction = null;
@@ -728,6 +724,12 @@ public class PlayState extends GameState {
     private void updateCamera() {
         camera.position.set(playerX + PLAYER_SIZE / 2f, playerY + PLAYER_SIZE / 2f, 0);
         camera.update();
+    }
+
+    /** Apply a tool action's world effect at its effect frame. Only tilling has one today; new
+     *  effects (watering, digging, ...) slot in here keyed by the def's {@code effect} string. */
+    private void applyActionEffect(String effect, int dir) {
+        if ("till".equals(effect)) performTill(dir);
     }
 
     /** Till the soil the player faces, reusing PlantingLayer's editLayer (amount 400 = a 2x2 plot). */
