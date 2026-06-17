@@ -5,9 +5,9 @@ import java.io.Serializable;
 import static utilz.Constants.InventoryConstants.Nothing;
 
 /**
- * Inventory data model: items and their amounts per slot, plus the selected-slot toggle. Rendering now
- * lives in the libGDX HUD ({@code PlayState.drawHud}); the old Swing {@code render(Graphics)} methods
- * were removed in the cutover.
+ * Inventory data model: items and their amounts per slot, plus the index of the selected slot.
+ * Rendering now lives in the libGDX HUD ({@code PlayState.drawHud}); the old Swing
+ * {@code render(Graphics)} methods were removed in the cutover.
  */
 public class Inventory implements Serializable {
     // Pinned to the original (Swing-era) auto-computed value so existing saved worlds still
@@ -16,7 +16,7 @@ public class Inventory implements Serializable {
 
     private final int[] inventory;
     private final int[] inventoryAmounts;
-    private int toggle = 0;
+    private int selectedSlot = 0;
 
     public Inventory(int size) {
         inventory = new int[size];
@@ -66,13 +66,14 @@ public class Inventory implements Serializable {
         return inventoryAmounts;
     }
 
-    public void toggle(int toggle) {
-        this.toggle += toggle;
-        if (this.toggle > 9) this.toggle = 9;
-        if (this.toggle < 0) this.toggle = 0;
+    /** Move the selected slot by {@code delta}, clamped to the 0..9 bar. */
+    public void moveSelection(int delta) {
+        this.selectedSlot += delta;
+        if (this.selectedSlot > 9) this.selectedSlot = 9;
+        if (this.selectedSlot < 0) this.selectedSlot = 0;
     }
 
-    public int getToggle() {
-        return toggle;
+    public int getSelectedSlot() {
+        return selectedSlot;
     }
 }

@@ -4,7 +4,7 @@ import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.utils.Json;
 
 /**
- * Loads crop definitions from a JSON file using libGDX's {@link Json}.
+ * Loads crop blueprints from a JSON file using libGDX's {@link Json}.
  *
  * <p><strong>This is the ONLY class allowed to touch the JSON library.</strong> It is a deliberate
  * libGDX shortcut (per the project's "flag every shortcut" rule): {@code Json.fromJson} does the
@@ -12,8 +12,8 @@ import com.badlogic.gdx.utils.Json;
  * confined here behind {@link CropDataSource}, replacing it with a hand-rolled format later means
  * writing one sibling class and swapping the call site — nothing else changes.
  *
- * <p>The file is a JSON array of objects whose keys match {@link CropDef}'s fields, e.g.:
- * <pre>[{ "index": 0, "name": "Potato", "sheetCol": 0, "sheetRow": 0 }]</pre>
+ * <p>The file is a JSON array of objects whose keys match {@link CropBlueprint}'s fields, e.g.:
+ * <pre>[{ "index": 0, "name": "Potato", "spriteColumn": 0, "spriteTopRow": 0 }]</pre>
  */
 public final class JsonCropDataSource implements CropDataSource {
     private final FileHandle file;
@@ -23,7 +23,7 @@ public final class JsonCropDataSource implements CropDataSource {
     }
 
     @Override
-    public CropDef[] loadCrops() {
-        return new Json().fromJson(CropDef[].class, file);
+    public CropBlueprint[] loadCropBlueprints() {
+        return new Json().fromJson(CropBlueprint[].class, file);
     }
 }

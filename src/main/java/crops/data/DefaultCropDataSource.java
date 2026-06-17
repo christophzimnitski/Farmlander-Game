@@ -16,15 +16,16 @@ public final class DefaultCropDataSource implements CropDataSource {
     public static final int CROP_COUNT = 67;
 
     @Override
-    public CropDef[] loadCrops() {
-        CropDef[] defs = new CropDef[CROP_COUNT];
+    public CropBlueprint[] loadCropBlueprints() {
+        CropBlueprint[] blueprints = new CropBlueprint[CROP_COUNT];
         for (int c = 0; c < CROP_COUNT; c++) {
             int group = c < 32 ? 0 : c < 64 ? 1 : 2;
-            int sheetRow = group * 5;                                          // band top: 0, 5, 10
-            int sheetCol = group == 0 ? c : group == 1 ? c - 32 : 29 + (c - 64);
+            int spriteTopRow = group * 5;                                      // band top: 0, 5, 10
+            int spriteColumn = group == 0 ? c : group == 1 ? c - 32 : 29 + (c - 64);
             String name = c == 0 ? "Potato" : "crop" + c;
-            defs[c] = new CropDef(c, name, sheetCol, sheetRow, null); // null durations -> registry default
+            // null durations -> registry default for every stage
+            blueprints[c] = new CropBlueprint(c, name, spriteColumn, spriteTopRow, null);
         }
-        return defs;
+        return blueprints;
     }
 }

@@ -13,31 +13,31 @@ import states.PlayState;
  */
 public class FarmlanderGame implements ApplicationListener {
     private SpriteBatch batch;
-    private GameStateManager gsm;
+    private GameStateManager stateManager;
 
     @Override
     public void create() {
         batch = new SpriteBatch();
-        gsm = new GameStateManager();
-        gsm.push(new PlayState(gsm));
+        stateManager = new GameStateManager();
+        stateManager.push(new PlayState(stateManager));
     }
 
     @Override
     public void render() {
         // libGDX hands us a correctly-timed frame — no more while(true) loop.
         float delta = Gdx.graphics.getDeltaTime();
-        gsm.update(delta);
+        stateManager.update(delta);
 
         // Grass green (Swing's Color(48,129,54)) — the base the detail tiles sit on.
         Gdx.gl.glClearColor(48f / 255f, 129f / 255f, 54f / 255f, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
-        gsm.render(batch);
+        stateManager.render(batch);
     }
 
     @Override
     public void resize(int width, int height) {
-        gsm.resize(width, height);
+        stateManager.resize(width, height);
     }
 
     @Override public void pause() {}
@@ -45,7 +45,7 @@ public class FarmlanderGame implements ApplicationListener {
 
     @Override
     public void dispose() {
-        gsm.dispose();
+        stateManager.dispose();
         batch.dispose();
     }
 }

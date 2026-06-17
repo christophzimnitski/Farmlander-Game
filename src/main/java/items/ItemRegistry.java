@@ -4,7 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import crops.CropType;
-import items.data.ItemDef;
+import items.data.ItemBlueprint;
 
 /**
  * The single source of truth for "what inventory items exist" and the one place the
@@ -13,23 +13,23 @@ import items.data.ItemDef;
  *
  * <p>Two inputs are merged:
  * <ol>
- *   <li>explicit {@link ItemDef}s from the data file (today: the tools) — see {@code items.data};</li>
+ *   <li>explicit {@link ItemBlueprint}s from the data file (today: the tools) — see {@code items.data};</li>
  *   <li><em>crop</em> items derived from the crop catalog: each {@link CropType} contributes one item
  *       at {@code type.itemId} named after the crop, with the {@code food/<id>.png} icon convention.</li>
  * </ol>
  * Deriving crop items (rather than listing them) keeps crop names single-sourced in {@code crops.json}
  * and means the {@code 100+index} offset stays defined exactly once, in {@link CropType}. Explicit
- * defs win on id collision.
+ * blueprints win on id collision.
  */
 public final class ItemRegistry {
     private final Map<Integer, ItemType> byId = new LinkedHashMap<>();
 
-    public ItemRegistry(ItemDef[] explicit, CropType[] crops) {
+    public ItemRegistry(ItemBlueprint[] explicit, CropType[] crops) {
         if (explicit != null) {
-            for (ItemDef d : explicit) {
-                if (d == null) continue;
-                String icon = d.icon; // tools: null unless the data file gives one
-                byId.put(d.id, new ItemType(d.id, d.name, d.type, icon, d.cropIndex));
+            for (ItemBlueprint b : explicit) {
+                if (b == null) continue;
+                String iconPath = b.iconPath; // tools: null unless the data file gives one
+                byId.put(b.id, new ItemType(b.id, b.name, b.category, iconPath, b.cropIndex));
             }
         }
         if (crops != null) {

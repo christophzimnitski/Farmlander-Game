@@ -12,20 +12,20 @@ package tools.data;
  */
 public final class DefaultToolActionDataSource implements ToolActionDataSource {
     @Override
-    public ToolActionDef[] loadToolActions() {
+    public ToolActionBlueprint[] loadToolActionBlueprints() {
         int[] swingRows = {46, 48, 50, 52};
         int[] swingOrder = {5, 4, 3, 1, 0};
-        return new ToolActionDef[] {
+        return new ToolActionBlueprint[] {
             // Tilling: the only action with a world effect — tills the faced 2x2 plot at frame 5.
-            new ToolActionDef(4, "Tilling", "mining", new int[]{0, 1, 2, 3}, 8, null, 5, "till", false),
-            // Watering: 8 frames (the old Swing GetSpritesInAction said 4, which looked abrupt). No effect yet.
-            new ToolActionDef(3, "Watering", "mining", new int[]{20, 21, 22, 23}, 8, null, -1, null, false),
+            new ToolActionBlueprint(4, "Tilling", "mining", new int[]{0, 1, 2, 3}, 8, null, 5, "till", false),
+            // Watering: 8 frames (the old Swing getSpritesInAction said 4, which looked abrupt). No effect yet.
+            new ToolActionBlueprint(3, "Watering", "mining", new int[]{20, 21, 22, 23}, 8, null, -1, null, false),
             // Digging: shovel, 8 frames. No effect yet.
-            new ToolActionDef(5, "Digging", "mining", new int[]{4, 5, 6, 7}, 8, null, -1, null, false),
+            new ToolActionBlueprint(5, "Digging", "mining", new int[]{4, 5, 6, 7}, 8, null, -1, null, false),
             // Chopping: oversized axe swing from the chopping sheet.
-            new ToolActionDef(1, "Chopping", "chopping", swingRows, 6, swingOrder, -1, null, true),
+            new ToolActionBlueprint(1, "Chopping", "chopping", swingRows, 6, swingOrder, -1, null, true),
             // Mining: oversized pickaxe swing from the mining sheet (same layout/order as chopping).
-            new ToolActionDef(2, "Mining", "mining", swingRows, 6, swingOrder, -1, null, true),
+            new ToolActionBlueprint(2, "Mining", "mining", swingRows, 6, swingOrder, -1, null, true),
         };
     }
 }

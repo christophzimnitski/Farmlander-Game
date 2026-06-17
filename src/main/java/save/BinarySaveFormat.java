@@ -30,7 +30,7 @@ public final class BinarySaveFormat implements SaveFormat {
 
         out.writeFloat(d.playerX);
         out.writeFloat(d.playerY);
-        out.writeInt(d.currentAction);
+        out.writeInt(d.currentAnimation);
         writeIntArray(out, d.walkActions);
 
         writeIntArray(out, d.invItems);
@@ -64,7 +64,7 @@ public final class BinarySaveFormat implements SaveFormat {
         WorldSave d = new WorldSave();
         d.playerX = in.readFloat();
         d.playerY = in.readFloat();
-        d.currentAction = in.readInt();
+        d.currentAnimation = in.readInt();
         d.walkActions = readIntArray(in);
 
         d.invItems = readIntArray(in);

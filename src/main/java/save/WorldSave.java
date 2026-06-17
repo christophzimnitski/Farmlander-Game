@@ -17,7 +17,7 @@ public final class WorldSave {
     // Player.
     public float playerX;
     public float playerY;
-    public int currentAction;
+    public int currentAnimation;  // the player animation row to restore (a WALK_* id)
     public int[] walkActions;     // the 4 selected walk-animation indices
 
     // Inventory (primitives, not the Inventory object).

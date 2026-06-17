@@ -32,7 +32,7 @@ import save.WorldSave;
 import tools.data.DefaultToolActionDataSource;
 import tools.data.JsonToolActionDataSource;
 import tools.data.ToolActionDataSource;
-import tools.data.ToolActionDef;
+import tools.data.ToolActionBlueprint;
 
 import static utilz.Constants.PlayerActionConstants.playerAnimationArrays;
 
@@ -72,35 +72,36 @@ public class PlayState extends GameState {
     private static final float CROP_COLL_W = 48f, CROP_COLL_H = 24f; // narrower L/R, ~1/4 tile shorter T/B
 
     private final OrthographicCamera camera;
-    private final OrthographicCamera hudCam; // screen-space HUD, Y-down like the world
+    private final OrthographicCamera hudCamera; // screen-space HUD, Y-down like the world
 
-    private final Texture grassTex, plowedTex, tallGrassTex, wheatTex, youngWheatTex, playerTex, chopTex;
-    private final Texture invBarTex, toggleTex, fontTex;
+    private final Texture grassTexture, plowedTexture, tallGrassTexture, wheatTexture, youngWheatTexture,
+            playerTexture, chopTexture;
+    private final Texture inventoryBarTexture, toggleTexture, fontTexture;
     private final TextureRegion[] grassRegions, plantingRegions, collisionRegions;
     private final TextureRegion[][] playerFrames;
-    private final TextureRegion invBarRegion, toggleRegion;
+    private final TextureRegion inventoryBarRegion, toggleRegion;
     private final TextureRegion[] numberRegions; // 0..10, sliced from game_font (8x8)
 
     // Every classpath texture is owned by one lazy cache (load-on-first-use + dispose-all).
     private final Assets assets = new Assets();
-    // Food sprites: their sliced regions are cached here; the underlying textures live in `assets`.
-    private final Map<Integer, TextureRegion> foodRegions = new HashMap<>();
+    // Item HUD icons: their sliced regions are cached here; the underlying textures live in `assets`.
+    private final Map<Integer, TextureRegion> itemIconRegions = new HashMap<>();
 
     private final int[][] grass, planting, collision;
     private final PlantingLayer plantingLayer; // reused for its editLayer/autotile logic
-    private final int[] invItems, invAmounts;
-    private int invToggle;
-    private final Inventory inventory; // the live save object; its item/amount arrays are invItems/invAmounts
+    private final int[] inventoryItems, inventoryAmounts;
+    private int selectedSlot;
+    private final Inventory inventory; // the live save object; its arrays are inventoryItems/inventoryAmounts
 
     // Crop subsystem.
-    private final Texture cropsTex;
+    private final Texture cropsTexture;
     private final CropRegistry cropRegistry;
     private final ItemRegistry itemRegistry;
     private final CropField cropField;
-    private final Texture whiteTex;          // 1x1 white pixel for the tile highlight (handmade, no ShapeRenderer)
+    private final Texture whiteTexture;      // 1x1 white pixel for the tile highlight (handmade, no ShapeRenderer)
     private final TextureRegion whiteRegion;
-    private int hovCol = -1, hovRow = -1;    // tile under the mouse this frame
-    private boolean hovPlantable = false;    // hovered tile is tilled soil and empty
+    private int hoverCol = -1, hoverRow = -1; // tile under the mouse this frame
+    private boolean hoverPlantable = false;   // hovered tile is tilled soil and empty
     private final Vector3 mouseWorld = new Vector3();
 
     // Data-driven tool Q-actions, indexed by toolIndex (null = no action for that tool).
@@ -129,36 +130,36 @@ public class PlayState extends GameState {
     private int[] walkActions;
     private int toolIndex = 0;   // index into playerAnimationArrays (current tool)
     private int facing = 2;      // 0 up, 1 left, 2 down, 3 right
-    private int currentAction;
+    private int currentAnimation; // the player animation row being shown (a WALK_* id into playerFrames)
     private int frameIndex = 0;
     private float animTimer = 0;
 
-    public PlayState(GameStateManager gsm) {
-        super(gsm);
+    public PlayState(GameStateManager stateManager) {
+        super(stateManager);
 
         int w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
         camera = new OrthographicCamera();
         camera.setToOrtho(true, w, h); // Y-down to match Swing
-        hudCam = new OrthographicCamera();
-        hudCam.setToOrtho(true, w, h);
+        hudCamera = new OrthographicCamera();
+        hudCamera.setToOrtho(true, w, h);
 
-        grassTex      = loadTex("tilesets/grassTileset.png");
-        plowedTex     = loadTex("tilesets/plowed_soil.png");
-        tallGrassTex  = loadTex("tilesets/tallgrass.png");
-        wheatTex      = loadTex("tilesets/wheat.png");
-        youngWheatTex = loadTex("tilesets/youngwheat.png");
-        playerTex     = loadTex("player_animations/player_mining.png");
-        chopTex       = loadTex("player_animations/player_chopping.png");
-        invBarTex     = loadTex("ui/Inventory.png");
-        toggleTex     = loadTex("ui/toggle.png");
-        fontTex       = loadTex("ui/game_font.png");
+        grassTexture      = loadTexture("tilesets/grassTileset.png");
+        plowedTexture     = loadTexture("tilesets/plowed_soil.png");
+        tallGrassTexture  = loadTexture("tilesets/tallgrass.png");
+        wheatTexture      = loadTexture("tilesets/wheat.png");
+        youngWheatTexture = loadTexture("tilesets/youngwheat.png");
+        playerTexture     = loadTexture("player_animations/player_mining.png");
+        chopTexture       = loadTexture("player_animations/player_chopping.png");
+        inventoryBarTexture = loadTexture("ui/Inventory.png");
+        toggleTexture       = loadTexture("ui/toggle.png");
+        fontTexture         = loadTexture("ui/game_font.png");
 
-        grassRegions    = slice(grassTex, 1, 3);
-        plantingRegions = slice(plowedTex, 6, 3);
+        grassRegions    = slice(grassTexture, 1, 3);
+        plantingRegions = slice(plowedTexture, 6, 3);
         collisionRegions = new TextureRegion[55];
-        TextureRegion[] tg = slice(tallGrassTex, 6, 3);
-        TextureRegion[] wh = slice(wheatTex, 6, 3);
-        TextureRegion[] yw = slice(youngWheatTex, 6, 3);
+        TextureRegion[] tg = slice(tallGrassTexture, 6, 3);
+        TextureRegion[] wh = slice(wheatTexture, 6, 3);
+        TextureRegion[] yw = slice(youngWheatTexture, 6, 3);
         for (int k = 1; k <= 18; k++) {
             collisionRegions[k]      = tg[k];
             collisionRegions[k + 18] = wh[k];
@@ -166,11 +167,11 @@ public class PlayState extends GameState {
         }
 
         playerFrames = new TextureRegion[36][9];
-        float tw = playerTex.getWidth(), th = playerTex.getHeight();
+        float tw = playerTexture.getWidth(), th = playerTexture.getHeight();
         float pad = 0.5f;
         for (int row = 0; row < 36; row++) {
             for (int col = 0; col < 9; col++) {
-                TextureRegion r = new TextureRegion(playerTex);
+                TextureRegion r = new TextureRegion(playerTexture);
                 r.setRegion((col * 64 + pad) / tw, (row * 64 + pad) / th,
                             ((col + 1) * 64 - pad) / tw, ((row + 1) * 64 - pad) / th);
                 r.flip(false, true);
@@ -184,29 +185,29 @@ public class PlayState extends GameState {
         ToolActionDataSource toolData;
         try {
             ToolActionDataSource json = new JsonToolActionDataSource(Gdx.files.classpath("data/tool_actions.json"));
-            json.loadToolActions(); // probe
+            json.loadToolActionBlueprints(); // probe
             toolData = json;
         } catch (Exception e) {
             toolData = new DefaultToolActionDataSource();
         }
-        for (ToolActionDef def : toolData.loadToolActions()) buildToolAction(def);
+        for (ToolActionBlueprint blueprint : toolData.loadToolActionBlueprints()) buildToolAction(blueprint);
 
-        invBarRegion = flippedFull(invBarTex);
-        toggleRegion = flippedFull(toggleTex);
+        inventoryBarRegion = flippedFull(inventoryBarTexture);
+        toggleRegion = flippedFull(toggleTexture);
         // game_font.png: 1 row of 11 number glyphs, 8x8 each.
         numberRegions = new TextureRegion[11];
         for (int k = 0; k < 11; k++) {
-            TextureRegion r = new TextureRegion(fontTex, k * 8, 0, 8, 8);
+            TextureRegion r = new TextureRegion(fontTexture, k * 8, 0, 8, 8);
             r.flip(false, true);
             numberRegions[k] = r;
         }
 
         int[][] sCollision, sPlanting, sGrass;
         float px, py;
-        int action;
+        int animation;
         int[] selected;
         int[] sInvItems, sInvAmounts;
-        int sInvToggle;
+        int sSelectedSlot;
         // Crops read from the save (null when there's no save → none to restore).
         CropSave[] sCrops;
         // One read through the swappable SaveFormat seam: SaveManager picks binary vs. the legacy
@@ -218,11 +219,11 @@ public class PlayState extends GameState {
             sGrass     = ws.grass;
             sInvItems  = ws.invItems;
             sInvAmounts = ws.invAmounts;
-            sInvToggle = ws.invToggle;
+            sSelectedSlot = ws.invToggle;
             px = ws.playerX;
             py = ws.playerY;
             selected = ws.walkActions;
-            action = ws.currentAction;
+            animation = ws.currentAnimation;
             sCrops = ws.crops;
         } else {
             GrassLayer fallback = new GrassLayer();
@@ -232,10 +233,10 @@ public class PlayState extends GameState {
             sCollision = new int[40][22];
             sInvItems = null;
             sInvAmounts = null;
-            sInvToggle = 0;
+            sSelectedSlot = 0;
             px = 2000;
             py = 800;
-            action = 34;
+            animation = 34;
             selected = new int[]{32, 33, 34, 35};
             sCrops = null;
         }
@@ -246,64 +247,64 @@ public class PlayState extends GameState {
         grass = sGrass;
         // Rebuild the live Inventory from saved primitives (it's no longer serialized directly).
         Inventory inv = new Inventory(sInvItems != null ? sInvItems.length : 10);
-        invItems = inv.getInventory();      // shared refs: mutating these mutates the live Inventory
-        invAmounts = inv.getInventoryAmounts();
+        inventoryItems = inv.getInventory();      // shared refs: mutating these mutates the live Inventory
+        inventoryAmounts = inv.getInventoryAmounts();
         if (sInvItems != null) {
-            for (int i = 0; i < invItems.length && i < sInvItems.length; i++) {
-                invItems[i] = sInvItems[i];
-                invAmounts[i] = sInvAmounts[i];
+            for (int i = 0; i < inventoryItems.length && i < sInvItems.length; i++) {
+                inventoryItems[i] = sInvItems[i];
+                inventoryAmounts[i] = sInvAmounts[i];
             }
         }
-        inv.toggle(sInvToggle - inv.getToggle());
+        inv.moveSelection(sSelectedSlot - inv.getSelectedSlot());
         inventory = inv;
-        invToggle = inv.getToggle();
+        selectedSlot = inv.getSelectedSlot();
         playerX = px;
         playerY = py;
         walkActions = (selected != null && selected.length == 4) ? selected : new int[]{32, 33, 34, 35};
-        currentAction = (action >= 0 && action < 36) ? action : 34;
+        currentAnimation = (animation >= 0 && animation < 36) ? animation : 34;
         // Recover the tool index and facing from the saved state.
         for (int i = 0; i < playerAnimationArrays.length; i++) {
             if (Arrays.equals(playerAnimationArrays[i], walkActions)) { toolIndex = i; break; }
         }
-        for (int i = 0; i < 4; i++) if (walkActions[i] == currentAction) { facing = i; break; }
+        for (int i = 0; i < 4; i++) if (walkActions[i] == currentAnimation) { facing = i; break; }
 
         // Crop subsystem: catalog from crops.png, an empty field sized to the world, and a 1x1
         // white pixel for the hover highlight (kept on the main SpriteBatch — no ShapeRenderer).
-        cropsTex = loadTex("tilesets/crops.png");
-        // Crop definitions come from data (data/crops.json via libGDX Json), behind a swappable
+        cropsTexture = loadTexture("tilesets/crops.png");
+        // Crop blueprints come from data (data/crops.json via libGDX Json), behind a swappable
         // CropDataSource seam. If the file is missing/unparseable, fall back to the built-in catalog
         // so crops never break.
         CropDataSource cropData;
         try {
             CropDataSource json = new JsonCropDataSource(Gdx.files.classpath("data/crops.json"));
-            json.loadCrops(); // probe: force a parse now so a bad file trips the fallback here
+            json.loadCropBlueprints(); // probe: force a parse now so a bad file trips the fallback here
             cropData = json;
         } catch (Exception e) {
             cropData = new DefaultCropDataSource();
         }
-        cropRegistry = new CropRegistry(cropsTex, cropData.loadCrops(), DEFAULT_STAGE_MILLIS);
+        cropRegistry = new CropRegistry(cropsTexture, cropData.loadCropBlueprints(), DEFAULT_STAGE_MILLIS);
         // ItemDataSource seam (same probe-load + fallback pattern as crops/tools). The data file owns
         // the tools; crop seed/produce items are derived from the crop catalog so their names aren't
         // duplicated out of crops.json.
         ItemDataSource itemData;
         try {
             ItemDataSource json = new JsonItemDataSource(Gdx.files.classpath("data/items.json"));
-            json.loadItems(); // probe: force a parse now so a bad file trips the fallback here
+            json.loadItemBlueprints(); // probe: force a parse now so a bad file trips the fallback here
             itemData = json;
         } catch (Exception e) {
             itemData = new DefaultItemDataSource();
         }
         CropType[] cropTypes = new CropType[cropRegistry.count()];
         for (int i = 0; i < cropTypes.length; i++) cropTypes[i] = cropRegistry.get(i);
-        itemRegistry = new ItemRegistry(itemData.loadItems(), cropTypes);
+        itemRegistry = new ItemRegistry(itemData.loadItemBlueprints(), cropTypes);
         cropField = new CropField(collision.length, collision[0].length);
         if (sCrops != null) restoreCrops(sCrops);
         Pixmap pm = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
         pm.setColor(Color.WHITE);
         pm.fill();
-        whiteTex = new Texture(pm);
+        whiteTexture = new Texture(pm);
         pm.dispose();
-        whiteRegion = new TextureRegion(whiteTex);
+        whiteRegion = new TextureRegion(whiteTexture);
 
     }
 
@@ -319,7 +320,7 @@ public class PlayState extends GameState {
     }
 
     /**
-     * Persist the world to the save file via the {@link SaveManager}/{@link SaveFormat} seam (binary).
+     * Persist the world to the save file via the {@link SaveManager}/{@link save.SaveFormat} seam (binary).
      * Builds a plain {@link WorldSave} snapshot — no engine objects, no Java serialization. Called on a
      * clean exit (see {@link #dispose}); a SIGKILL (e.g. the dev pkill-relaunch) skips it, which is fine
      * — only deliberate quits should save.
@@ -328,11 +329,11 @@ public class PlayState extends GameState {
         WorldSave ws = new WorldSave();
         ws.playerX = playerX;
         ws.playerY = playerY;
-        ws.currentAction = currentAction;
+        ws.currentAnimation = currentAnimation;
         ws.walkActions = walkActions;
-        ws.invItems = invItems;       // shared live refs — already current
-        ws.invAmounts = invAmounts;
-        ws.invToggle = invToggle;
+        ws.invItems = inventoryItems;       // shared live refs — already current
+        ws.invAmounts = inventoryAmounts;
+        ws.invToggle = selectedSlot;
         ws.collision = collision;
         ws.planting = planting;
         ws.grass = grass;
@@ -351,22 +352,22 @@ public class PlayState extends GameState {
     }
 
     /** Load a classpath texture with Nearest filtering (crisp pixel art, no color softening). */
-    private Texture loadTex(String path) {
+    private Texture loadTexture(String path) {
         return assets.get(path); // lazy load + cache + dispose all handled by Assets
     }
 
-    private TextureRegion flippedFull(Texture tex) {
-        TextureRegion r = new TextureRegion(tex);
+    private TextureRegion flippedFull(Texture texture) {
+        TextureRegion r = new TextureRegion(texture);
         r.flip(false, true);
         return r;
     }
 
-    private TextureRegion[] slice(Texture tex, int rows, int cols) {
+    private TextureRegion[] slice(Texture texture, int rows, int cols) {
         TextureRegion[] regions = new TextureRegion[rows * cols + 1];
         int k = 1;
         for (int row = 0; row < rows; row++) {
             for (int col = 0; col < cols; col++) {
-                TextureRegion r = new TextureRegion(tex, col * 32, row * 32, 32, 32);
+                TextureRegion r = new TextureRegion(texture, col * 32, row * 32, 32, 32);
                 r.flip(false, true);
                 regions[k++] = r;
             }
@@ -375,13 +376,13 @@ public class PlayState extends GameState {
     }
 
     /** Slice 64px action frames from a sheet: frames[dir][f] for the given direction rows (Y-flipped, inset). */
-    private TextureRegion[][] sliceActionRows(Texture tex, int[] dirRows, int frameCount) {
-        float tw = tex.getWidth(), th = tex.getHeight(), pad = 0.5f;
-        TextureRegion[][] out = new TextureRegion[dirRows.length][frameCount];
-        for (int dir = 0; dir < dirRows.length; dir++) {
-            int row = dirRows[dir];
+    private TextureRegion[][] sliceActionRows(Texture texture, int[] directionRows, int frameCount) {
+        float tw = texture.getWidth(), th = texture.getHeight(), pad = 0.5f;
+        TextureRegion[][] out = new TextureRegion[directionRows.length][frameCount];
+        for (int dir = 0; dir < directionRows.length; dir++) {
+            int row = directionRows[dir];
             for (int f = 0; f < frameCount; f++) {
-                TextureRegion r = new TextureRegion(tex);
+                TextureRegion r = new TextureRegion(texture);
                 r.setRegion((f * 64 + pad) / tw, (row * 64 + pad) / th,
                             ((f + 1) * 64 - pad) / tw, ((row + 1) * 64 - pad) / th);
                 r.flip(false, true);
@@ -392,23 +393,23 @@ public class PlayState extends GameState {
     }
 
     /** Re-map each direction's frames into a new order (e.g. reverse and/or drop bad frames). */
-    private TextureRegion[][] reorder(TextureRegion[][] frames, int[] order) {
-        TextureRegion[][] out = new TextureRegion[frames.length][order.length];
+    private TextureRegion[][] reorder(TextureRegion[][] frames, int[] frameOrder) {
+        TextureRegion[][] out = new TextureRegion[frames.length][frameOrder.length];
         for (int dir = 0; dir < frames.length; dir++)
-            for (int i = 0; i < order.length; i++)
-                out[dir][i] = frames[dir][order[i]];
+            for (int i = 0; i < frameOrder.length; i++)
+                out[dir][i] = frames[dir][frameOrder[i]];
         return out;
     }
 
     /** Slice oversized 128px action frames: frames[dir][f] from each direction's start row (Y-flipped). */
-    private TextureRegion[][] sliceActionRows128(Texture tex, int[] dirStartRows, int frameCount) {
-        float tw = tex.getWidth(), th = tex.getHeight(), pad = 0.5f;
-        TextureRegion[][] out = new TextureRegion[dirStartRows.length][frameCount];
-        for (int dir = 0; dir < dirStartRows.length; dir++) {
-            float y = dirStartRows[dir] * 64f;
+    private TextureRegion[][] sliceActionRows128(Texture texture, int[] directionStartRows, int frameCount) {
+        float tw = texture.getWidth(), th = texture.getHeight(), pad = 0.5f;
+        TextureRegion[][] out = new TextureRegion[directionStartRows.length][frameCount];
+        for (int dir = 0; dir < directionStartRows.length; dir++) {
+            float y = directionStartRows[dir] * 64f;
             for (int f = 0; f < frameCount; f++) {
                 float x = f * 128f;
-                TextureRegion r = new TextureRegion(tex);
+                TextureRegion r = new TextureRegion(texture);
                 r.setRegion((x + pad) / tw, (y + pad) / th, (x + 128 - pad) / tw, (y + 128 - pad) / th);
                 r.flip(false, true);
                 out[dir][f] = r;
@@ -417,36 +418,37 @@ public class PlayState extends GameState {
         return out;
     }
 
-    /** Turn a data {@link ToolActionDef} into a live {@link ToolAction}, slicing from the named sheet
+    /** Turn a data {@link ToolActionBlueprint} into a live {@link ToolAction}, slicing from the named sheet
      *  with the same helpers the hardcoded version used. */
-    private void buildToolAction(ToolActionDef def) {
-        if (def == null || def.toolIndex < 0 || def.toolIndex >= toolActions.length) return;
-        Texture sheet = "chopping".equals(def.sheet) ? chopTex : playerTex;
-        TextureRegion[][] frames = def.oversized
-                ? sliceActionRows128(sheet, def.dirRows, def.rawFrames)
-                : sliceActionRows(sheet, def.dirRows, def.rawFrames);
-        if (def.order != null) frames = reorder(frames, def.order);
-        int frameCount = (def.order != null) ? def.order.length : def.rawFrames;
+    private void buildToolAction(ToolActionBlueprint blueprint) {
+        if (blueprint == null || blueprint.toolIndex < 0 || blueprint.toolIndex >= toolActions.length) return;
+        Texture sheet = "chopping".equals(blueprint.sheetName) ? chopTexture : playerTexture;
+        TextureRegion[][] frames = blueprint.oversized
+                ? sliceActionRows128(sheet, blueprint.directionRows, blueprint.rawFrameCount)
+                : sliceActionRows(sheet, blueprint.directionRows, blueprint.rawFrameCount);
+        if (blueprint.frameOrder != null) frames = reorder(frames, blueprint.frameOrder);
+        int frameCount = (blueprint.frameOrder != null) ? blueprint.frameOrder.length : blueprint.rawFrameCount;
         // Oversized swings draw at 2x, centered on the normal footprint; standard actions draw 1:1.
-        float drawSize = def.oversized ? PLAYER_SIZE * 2f : PLAYER_SIZE;
+        float drawSize = blueprint.oversized ? PLAYER_SIZE * 2f : PLAYER_SIZE;
         float off = -(drawSize - PLAYER_SIZE) / 2f;
-        toolActions[def.toolIndex] = new ToolAction(frames, frameCount, def.effectFrame, def.effect, drawSize, off, off);
+        toolActions[blueprint.toolIndex] =
+                new ToolAction(frames, frameCount, blueprint.effectFrame, blueprint.effect, drawSize, off, off);
     }
 
     /** HUD icon for an item, loaded on demand (cached, null cached too so we don't retry). The path
      *  comes from the ItemRegistry (which applies the food/<id>.png convention for crop items). */
-    private TextureRegion foodRegion(int id) {
-        if (foodRegions.containsKey(id)) return foodRegions.get(id);
+    private TextureRegion itemIcon(int id) {
+        if (itemIconRegions.containsKey(id)) return itemIconRegions.get(id);
         TextureRegion region = null;
         String path = itemRegistry.iconPath(id);
         try {
-            if (path == null) { foodRegions.put(id, null); return null; }
-            Texture t = loadTex(path); // owned + deduped by the Assets cache
+            if (path == null) { itemIconRegions.put(id, null); return null; }
+            Texture t = loadTexture(path); // owned + deduped by the Assets cache
             region = new TextureRegion(t);
             region.flip(false, true);
         } catch (Exception ignored) {
         }
-        foodRegions.put(id, region);
+        itemIconRegions.put(id, region);
         return region;
     }
 
@@ -553,21 +555,21 @@ public class PlayState extends GameState {
         float invX = w / 2f - invW / 2f, invY = h * 7f / 8f;
         float slot = invW / 10f;
 
-        batch.setProjectionMatrix(hudCam.combined);
+        batch.setProjectionMatrix(hudCamera.combined);
         batch.begin();
-        batch.draw(invBarRegion, invX, invY, invW, invH);
-        batch.draw(toggleRegion, invX + invToggle * slot, invY, slot, invH);
-        for (int i = 0; i < invItems.length; i++) {
-            if (invItems[i] != 0) {
-                TextureRegion food = foodRegion(invItems[i]);
-                if (food != null) {
-                    batch.draw(food, invX + i * slot + w / 120f, invY + h / 80f, invW / 15f, invH / 1.5f);
+        batch.draw(inventoryBarRegion, invX, invY, invW, invH);
+        batch.draw(toggleRegion, invX + selectedSlot * slot, invY, slot, invH);
+        for (int i = 0; i < inventoryItems.length; i++) {
+            if (inventoryItems[i] != 0) {
+                TextureRegion icon = itemIcon(inventoryItems[i]);
+                if (icon != null) {
+                    batch.draw(icon, invX + i * slot + w / 120f, invY + h / 80f, invW / 15f, invH / 1.5f);
                 }
                 // Draw the amount digit by digit (the font row is "-123456789 0 -", so digit d is at
                 // glyph index d, except 0 which lives at index 10). This shows 10+ instead of a lone "0".
                 // Each glyph cell is drawn glyphW wide but the digit only fills its middle ~50%, so advance
                 // by ~0.6*glyphW: the cells overlap only in their transparent padding, giving tight digits.
-                String digits = Integer.toString(Math.max(0, invAmounts[i]));
+                String digits = Integer.toString(Math.max(0, inventoryAmounts[i]));
                 float glyphW = invW / 50f, adv = glyphW * 0.6f;
                 float numX = invX + i * slot + w / 32f, numY = invY + h / 18f;
                 // Right-align: the ones digit stays anchored at numX, extra digits grow to the left, so
@@ -629,8 +631,8 @@ public class PlayState extends GameState {
         resolveCollisions();
 
         // Inventory selector (1/3) and tool cycling (2) — discrete presses.
-        if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_1)) invToggle = Math.max(0, invToggle - 1);
-        if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_3)) invToggle = Math.min(9, invToggle + 1);
+        if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_1)) selectedSlot = Math.max(0, selectedSlot - 1);
+        if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_3)) selectedSlot = Math.min(9, selectedSlot + 1);
         if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_2)) {
             toolIndex = (toolIndex + 1) % playerAnimationArrays.length;
             walkActions = playerAnimationArrays[toolIndex];
@@ -642,7 +644,7 @@ public class PlayState extends GameState {
         if (iy > 0) facing = 2; // down
         if (ix < 0) facing = 1; // left
         if (ix > 0) facing = 3; // right
-        currentAction = walkActions[facing];
+        currentAnimation = walkActions[facing];
 
         // Q: trigger the current tool's Q-action animation (and its world effect, if any).
         if (Gdx.input.isKeyJustPressed(Input.Keys.Q) && toolActions[toolIndex] != null) {
@@ -671,7 +673,7 @@ public class PlayState extends GameState {
 
         updateHover();
         // Left-click a plantable tile to sow the selected seed; E harvests a mature crop under the mouse.
-        if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT) && hovPlantable) plantAtHover();
+        if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT) && hoverPlantable) plantAtHover();
         if (Gdx.input.isKeyJustPressed(Input.Keys.E)) harvestAtHover();
 
         updateCamera();
@@ -684,10 +686,10 @@ public class PlayState extends GameState {
         mouseWorld.set(Gdx.input.getX(), Gdx.input.getY(), 0);
         camera.unproject(mouseWorld);
         // The node whose center ((j+1)*TILE,(i+1)*TILE) the mouse falls nearest.
-        hovCol = (int) Math.floor((mouseWorld.x + TILE / 2f) / TILE) - 1;
-        hovRow = (int) Math.floor((mouseWorld.y + TILE / 2f) / TILE) - 1;
-        hovPlantable = isPlantableNode(hovCol, hovRow) && cropField.isOpen(hovCol, hovRow)
-                     && !playerOverlapsCropCell(hovCol, hovRow);
+        hoverCol = (int) Math.floor((mouseWorld.x + TILE / 2f) / TILE) - 1;
+        hoverRow = (int) Math.floor((mouseWorld.y + TILE / 2f) / TILE) - 1;
+        hoverPlantable = isPlantableNode(hoverCol, hoverRow) && cropField.isOpen(hoverCol, hoverRow)
+                     && !playerOverlapsCropCell(hoverCol, hoverRow);
     }
 
     /** True when the 2x2 block of tiles with top-left (col,row) is entirely tilled soil. */
@@ -703,15 +705,18 @@ public class PlayState extends GameState {
 
     /** Plant the selected seed (an inventory crop item) at the hovered tile, consuming one seed. */
     private void plantAtHover() {
-        CropType seed = cropRegistry.get(itemRegistry.cropIndexFor(invItems[invToggle]));
-        if (seed == null || invAmounts[invToggle] <= 0) return; // no seed of the selected crop in hand
-        cropField.plant(hovCol, hovRow, seed, System.currentTimeMillis());
-        if (--invAmounts[invToggle] <= 0) { invAmounts[invToggle] = 0; invItems[invToggle] = 0; }
+        CropType seed = cropRegistry.get(itemRegistry.cropIndexFor(inventoryItems[selectedSlot]));
+        if (seed == null || inventoryAmounts[selectedSlot] <= 0) return; // no seed of the selected crop in hand
+        cropField.plant(hoverCol, hoverRow, seed, System.currentTimeMillis());
+        if (--inventoryAmounts[selectedSlot] <= 0) {
+            inventoryAmounts[selectedSlot] = 0;
+            inventoryItems[selectedSlot] = 0;
+        }
     }
 
     /** Harvest the hovered crop if it's mature: bank the produce and leave a hole that can be replanted. */
     private void harvestAtHover() {
-        PlantedCrop crop = cropField.at(hovCol, hovRow);
+        PlantedCrop crop = cropField.at(hoverCol, hoverRow);
         if (crop == null || !crop.isMature(System.currentTimeMillis())) return;
         addInventory(crop.type.itemId, 1);
         crop.harvested = true; // now renders the hole frame; node is open for replanting
@@ -719,11 +724,11 @@ public class PlayState extends GameState {
 
     /** Add an item to the inventory: stack onto a matching slot, else fill the first empty slot. */
     private void addInventory(int itemId, int amount) {
-        for (int i = 0; i < invItems.length; i++) {
-            if (invItems[i] == itemId) { invAmounts[i] += amount; return; }
+        for (int i = 0; i < inventoryItems.length; i++) {
+            if (inventoryItems[i] == itemId) { inventoryAmounts[i] += amount; return; }
         }
-        for (int i = 0; i < invItems.length; i++) {
-            if (invItems[i] == 0) { invItems[i] = itemId; invAmounts[i] = amount; return; }
+        for (int i = 0; i < inventoryItems.length; i++) {
+            if (inventoryItems[i] == 0) { inventoryItems[i] = itemId; inventoryAmounts[i] = amount; return; }
         }
     }
 
@@ -733,7 +738,7 @@ public class PlayState extends GameState {
     }
 
     /** Apply a tool action's world effect at its effect frame. Only tilling has one today; new
-     *  effects (watering, digging, ...) slot in here keyed by the def's {@code effect} string. */
+     *  effects (watering, digging, ...) slot in here keyed by the blueprint's {@code effect} string. */
     private void applyActionEffect(String effect, int dir) {
         if ("till".equals(effect)) performTill(dir);
     }
@@ -757,7 +762,7 @@ public class PlayState extends GameState {
             batch.draw(frame, playerX + activeAction.offX, playerY + activeAction.offY,
                        activeAction.drawSize, activeAction.drawSize);
         } else {
-            batch.draw(playerFrames[currentAction][frameIndex], playerX, playerY, PLAYER_SIZE, PLAYER_SIZE);
+            batch.draw(playerFrames[currentAnimation][frameIndex], playerX, playerY, PLAYER_SIZE, PLAYER_SIZE);
         }
     }
 
@@ -780,16 +785,16 @@ public class PlayState extends GameState {
 
     /** Highlight the hovered tile: green when plantable, yellow when it holds a mature (harvestable) crop. */
     private void drawHighlight(SpriteBatch batch) {
-        if (hovCol < 0 || hovRow < 0) return;
-        if (hovPlantable) {
+        if (hoverCol < 0 || hoverRow < 0) return;
+        if (hoverPlantable) {
             batch.setColor(0.3f, 1f, 0.3f, 0.35f);
         } else {
-            PlantedCrop crop = cropField.at(hovCol, hovRow);
+            PlantedCrop crop = cropField.at(hoverCol, hoverRow);
             if (crop == null || !crop.isMature(System.currentTimeMillis())) return;
             batch.setColor(1f, 0.95f, 0.3f, 0.35f);
         }
         // A tile-sized highlight centered on the node (the middle of the 2x2 tilled block).
-        batch.draw(whiteRegion, hovCol * TILE + TILE / 2f, hovRow * TILE + TILE / 2f, TILE, TILE);
+        batch.draw(whiteRegion, hoverCol * TILE + TILE / 2f, hoverRow * TILE + TILE / 2f, TILE, TILE);
         batch.setColor(Color.WHITE);
     }
 
@@ -819,14 +824,14 @@ public class PlayState extends GameState {
     @Override
     public void resize(int width, int height) {
         camera.setToOrtho(true, width, height);
-        hudCam.setToOrtho(true, width, height);
+        hudCamera.setToOrtho(true, width, height);
     }
 
     @Override
     public void dispose() {
         // Persist first, but never let a save error block resource cleanup on shutdown.
         try { saveGame(); } catch (Exception e) { e.printStackTrace(); }
-        assets.dispose();        // frees every classpath texture (tilesets, player sheets, UI, crops, food)
-        whiteTex.dispose();      // the one procedurally-generated texture, not owned by the cache
+        assets.dispose();        // frees every classpath texture (tilesets, player sheets, UI, crops, icons)
+        whiteTexture.dispose();  // the one procedurally-generated texture, not owned by the cache
     }
 }

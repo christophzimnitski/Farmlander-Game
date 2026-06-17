@@ -9,17 +9,17 @@ package items.data;
  * <p>Only tools are listed here. Crop seed/produce items (ids {@code 100+cropIndex}) are derived from
  * the crop catalog by {@code items.ItemRegistry}, so their names aren't duplicated out of
  * {@code crops.json}. Tools currently have no HUD icon (they're chosen with the tool key, not held as
- * inventory items), hence {@code icon == null}.
+ * inventory items), hence {@code iconPath == null}.
  */
 public final class DefaultItemDataSource implements ItemDataSource {
     @Override
-    public ItemDef[] loadItems() {
-        return new ItemDef[] {
-            new ItemDef(1, "Axe",         "tool", null, -1),
-            new ItemDef(2, "Pickaxe",     "tool", null, -1),
-            new ItemDef(3, "Watering Can", "tool", null, -1),
-            new ItemDef(4, "Hoe",         "tool", null, -1),
-            new ItemDef(5, "Shovel",      "tool", null, -1),
+    public ItemBlueprint[] loadItemBlueprints() {
+        return new ItemBlueprint[] {
+            new ItemBlueprint(1, "Axe",         "tool", null, -1),
+            new ItemBlueprint(2, "Pickaxe",     "tool", null, -1),
+            new ItemBlueprint(3, "Watering Can", "tool", null, -1),
+            new ItemBlueprint(4, "Hoe",         "tool", null, -1),
+            new ItemBlueprint(5, "Shovel",      "tool", null, -1),
         };
     }
 }

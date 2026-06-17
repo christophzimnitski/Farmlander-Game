@@ -8,10 +8,10 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
  * lifecycle and the state stack (see {@link GameStateManager}).
  */
 public abstract class GameState {
-    protected final GameStateManager gsm;
+    protected final GameStateManager stateManager;
 
-    protected GameState(GameStateManager gsm) {
-        this.gsm = gsm;
+    protected GameState(GameStateManager stateManager) {
+        this.stateManager = stateManager;
     }
 
     /** Advance simulation by {@code delta} seconds. Input is polled here. */

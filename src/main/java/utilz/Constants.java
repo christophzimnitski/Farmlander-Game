@@ -61,8 +61,8 @@ public class Constants {
         public static final int MINE_DOWN = 38;
         public static final int MINE_RIGHT = 39;
 
-        public static int GetSpritesInAction(int player_action) {
-            return switch (player_action) {
+        public static int getSpritesInAction(int playerAction) {
+            return switch (playerAction) {
                 case WATERING_UP, WATERING_LEFT, WATERING_DOWN, WATERING_RIGHT -> 4;
                 case TILLING_UP, TILLING_LEFT, TILLING_DOWN, TILLING_RIGHT, DIGGING_UP, DIGGING_LEFT, DIGGING_DOWN,
                      DIGGING_RIGHT -> 8;

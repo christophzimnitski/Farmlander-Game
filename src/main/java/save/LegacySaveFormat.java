@@ -48,11 +48,11 @@ public final class LegacySaveFormat implements SaveFormat {
         Inventory inv = (Inventory) save.get(5);
         d.invItems   = inv.getInventory();
         d.invAmounts = inv.getInventoryAmounts();
-        d.invToggle  = inv.getToggle();
+        d.invToggle  = inv.getSelectedSlot();
         d.playerX    = (Float) save.get(6);
         d.playerY    = (Float) save.get(7);
         d.walkActions = (int[]) save.get(8);
-        d.currentAction = (Integer) save.get(9);
+        d.currentAnimation = (Integer) save.get(9);
 
         if (save.size() >= 15) {
             int[] cols = (int[]) save.get(10);
