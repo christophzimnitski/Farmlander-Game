@@ -10,6 +10,10 @@ import static utilz.Constants.InventoryConstants.Nothing;
  * were removed in the cutover.
  */
 public class Inventory implements Serializable {
+    // Pinned to the original (Swing-era) auto-computed value so existing saved worlds still
+    // deserialize after the class was trimmed in the cutover. The fields below are unchanged.
+    private static final long serialVersionUID = 1752945795411627435L;
+
     private final int[] inventory;
     private final int[] inventoryAmounts;
     private int toggle = 0;
