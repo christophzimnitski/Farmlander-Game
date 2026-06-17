@@ -7,24 +7,55 @@ package crops.data;
  *   <li>the generator used once to emit the initial {@code data/crops.json}.</li>
  * </ol>
  *
- * <p>The mapping reproduces the original hardcoded {@code CropRegistry} slice layout exactly: the
- * {@code crops.png} sheet is 32x64 tiles in three 5-row bands, with each crop's growth frames stacked
- * vertically within its band.
+ * <p>The mapping reproduces the original hardcoded {@code CropRegistry} slice layout exactly.
+ * {@code tilesets/crops.png} is a grid of 32x64 tiles arranged in three vertical <b>bands</b>. A band
+ * is a block of {@link #STAGES_PER_CROP} stacked rows; one crop occupies a single column within a band,
+ * and its growth frames run top-to-bottom down that column. Reading the sheet:
+ *
+ * <pre>
+ *   columns:      0   1   2  ...                 29  30  31
+ *               +-----------------------------------------------+
+ *   band 0  rows 0-4  | crop 0 .. crop 31  (all 32 columns used)  |   spriteTopRow = 0
+ *               +-----------------------------------------------+
+ *   band 1  rows 5-9  | crop 32 .. crop 63 (all 32 columns used)  |   spriteTopRow = 5
+ *               +-----------------------------------------------+
+ *   band 2 rows 10-14 | (unused columns)        | 64 | 65 | 66 |  |   spriteTopRow = 10
+ *               +-----------------------------------------------+
+ * </pre>
+ *
+ * <p>The first two bands are full ({@link #CROPS_PER_BAND} crops each). The last band holds only
+ * {@link #LAST_BAND_CROP_COUNT} crops, and they sit in the band's <em>last</em> columns starting at
+ * {@link #LAST_BAND_FIRST_COLUMN} — not the first columns — matching how the art was authored.
  */
 public final class DefaultCropDataSource implements CropDataSource {
-    /** Number of crops the sheet holds (must match the art / the registry's expectations). */
-    public static final int CROP_COUNT = 67;
+    /** Growth frames per crop = the number of stacked rows that make up one band. */
+    public static final int STAGES_PER_CROP = 5;
+    /** Columns in a full band; bands 0 and 1 use all of them. */
+    public static final int CROPS_PER_BAND = 32;
+    /** Index of the final band (0-based), the only partially filled one. */
+    public static final int LAST_BAND = 2;
+    /** How many crops live in the last band. */
+    public static final int LAST_BAND_CROP_COUNT = 3;
+    /** First column the last band's crops occupy (they fill the band's trailing columns). */
+    public static final int LAST_BAND_FIRST_COLUMN = CROPS_PER_BAND - LAST_BAND_CROP_COUNT; // 29
+
+    /** Total crops the sheet holds: two full bands plus the short last band. */
+    public static final int CROP_COUNT = LAST_BAND * CROPS_PER_BAND + LAST_BAND_CROP_COUNT; // 67
 
     @Override
     public CropBlueprint[] loadCropBlueprints() {
         CropBlueprint[] blueprints = new CropBlueprint[CROP_COUNT];
-        for (int c = 0; c < CROP_COUNT; c++) {
-            int group = c < 32 ? 0 : c < 64 ? 1 : 2;
-            int spriteTopRow = group * 5;                                      // band top: 0, 5, 10
-            int spriteColumn = group == 0 ? c : group == 1 ? c - 32 : 29 + (c - 64);
-            String name = c == 0 ? "Potato" : "crop" + c;
+        for (int index = 0; index < CROP_COUNT; index++) {
+            int band = index / CROPS_PER_BAND;          // 0, 1, or 2
+            int columnInBand = index % CROPS_PER_BAND;  // position from the band's left edge
+
+            int spriteTopRow = band * STAGES_PER_CROP;  // band top: 0, 5, 10
+            // Full bands start at column 0; the short last band is shifted to its trailing columns.
+            int spriteColumn = (band == LAST_BAND) ? LAST_BAND_FIRST_COLUMN + columnInBand : columnInBand;
+
+            String name = (index == 0) ? "Potato" : "crop" + index;
             // null durations -> registry default for every stage
-            blueprints[c] = new CropBlueprint(c, name, spriteColumn, spriteTopRow, null);
+            blueprints[index] = new CropBlueprint(index, name, spriteColumn, spriteTopRow, null);
         }
         return blueprints;
     }
