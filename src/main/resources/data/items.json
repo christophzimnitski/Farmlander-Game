@@ -1,0 +1,7 @@
+[
+  { "id": 1, "name": "Axe",          "type": "tool" },
+  { "id": 2, "name": "Pickaxe",      "type": "tool" },
+  { "id": 3, "name": "Watering Can", "type": "tool" },
+  { "id": 4, "name": "Hoe",          "type": "tool" },
+  { "id": 5, "name": "Shovel",       "type": "tool" }
+]

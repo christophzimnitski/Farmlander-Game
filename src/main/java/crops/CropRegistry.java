@@ -57,9 +57,4 @@ public final class CropRegistry {
     public CropType get(int index) {
         return (index >= 0 && index < types.length && types[index] != null) ? types[index] : null;
     }
-
-    /** The crop whose seed/produce is the given inventory item id (100 + index), or null. */
-    public CropType byItemId(int itemId) {
-        return get(itemId - 100);
-    }
 }

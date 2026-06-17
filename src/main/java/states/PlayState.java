@@ -19,6 +19,10 @@ import crops.data.CropDataSource;
 import crops.data.DefaultCropDataSource;
 import crops.data.JsonCropDataSource;
 import entities.Inventory;
+import items.ItemRegistry;
+import items.data.DefaultItemDataSource;
+import items.data.ItemDataSource;
+import items.data.JsonItemDataSource;
 import levels.GrassLayer;
 import levels.LevelManager;
 import levels.PlantingLayer;
@@ -87,6 +91,7 @@ public class PlayState extends GameState {
     // Crop subsystem.
     private final Texture cropsTex;
     private final CropRegistry cropRegistry;
+    private final ItemRegistry itemRegistry;
     private final CropField cropField;
     private final Texture whiteTex;          // 1x1 white pixel for the tile highlight (handmade, no ShapeRenderer)
     private final TextureRegion whiteRegion;
@@ -261,6 +266,20 @@ public class PlayState extends GameState {
             cropData = new DefaultCropDataSource();
         }
         cropRegistry = new CropRegistry(cropsTex, cropData.loadCrops(), DEFAULT_STAGE_MILLIS);
+        // ItemDataSource seam (same probe-load + fallback pattern as crops/tools). The data file owns
+        // the tools; crop seed/produce items are derived from the crop catalog so their names aren't
+        // duplicated out of crops.json.
+        ItemDataSource itemData;
+        try {
+            ItemDataSource json = new JsonItemDataSource(Gdx.files.classpath("data/items.json"));
+            json.loadItems(); // probe: force a parse now so a bad file trips the fallback here
+            itemData = json;
+        } catch (Exception e) {
+            itemData = new DefaultItemDataSource();
+        }
+        CropType[] cropTypes = new CropType[cropRegistry.count()];
+        for (int i = 0; i < cropTypes.length; i++) cropTypes[i] = cropRegistry.get(i);
+        itemRegistry = new ItemRegistry(itemData.loadItems(), cropTypes);
         cropField = new CropField(collision.length, collision[0].length);
         if (sCropCols != null) restoreCrops(sCropCols, sCropRows, sCropTypes, sCropPlanted, sCropHarvested);
         Pixmap pm = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
@@ -429,12 +448,15 @@ public class PlayState extends GameState {
         toolActions[def.toolIndex] = new ToolAction(frames, frameCount, def.effectFrame, def.effect, drawSize, off, off);
     }
 
-    /** food/<id>.png loaded on demand (cached, null cached too so we don't retry). */
+    /** HUD icon for an item, loaded on demand (cached, null cached too so we don't retry). The path
+     *  comes from the ItemRegistry (which applies the food/<id>.png convention for crop items). */
     private TextureRegion foodRegion(int id) {
         if (foodRegions.containsKey(id)) return foodRegions.get(id);
         TextureRegion region = null;
+        String path = itemRegistry.iconPath(id);
         try {
-            Texture t = loadTex("food/" + id + ".png");
+            if (path == null) { foodRegions.put(id, null); return null; }
+            Texture t = loadTex(path);
             foodTextures.add(t);
             region = new TextureRegion(t);
             region.flip(false, true);
@@ -697,7 +719,7 @@ public class PlayState extends GameState {
 
     /** Plant the selected seed (an inventory crop item) at the hovered tile, consuming one seed. */
     private void plantAtHover() {
-        CropType seed = cropRegistry.byItemId(invItems[invToggle]);
+        CropType seed = cropRegistry.get(itemRegistry.cropIndexFor(invItems[invToggle]));
         if (seed == null || invAmounts[invToggle] <= 0) return; // no seed of the selected crop in hand
         cropField.plant(hovCol, hovRow, seed, System.currentTimeMillis());
         if (--invAmounts[invToggle] <= 0) { invAmounts[invToggle] = 0; invItems[invToggle] = 0; }
