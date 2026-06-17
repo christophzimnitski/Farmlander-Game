@@ -9,6 +9,7 @@ import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.math.Vector3;
+import core.Assets;
 import core.GameState;
 import core.GameStateManager;
 import crops.CropField;
@@ -78,9 +79,10 @@ public class PlayState extends GameState {
     private final TextureRegion invBarRegion, toggleRegion;
     private final TextureRegion[] numberRegions; // 0..10, sliced from game_font (8x8)
 
-    // Food sprites are individual PNGs loaded on demand and cached.
+    // Every classpath texture is owned by one lazy cache (load-on-first-use + dispose-all).
+    private final Assets assets = new Assets();
+    // Food sprites: their sliced regions are cached here; the underlying textures live in `assets`.
     private final Map<Integer, TextureRegion> foodRegions = new HashMap<>();
-    private final List<Texture> foodTextures = new ArrayList<>();
 
     private final int[][] grass, planting, collision;
     private final PlantingLayer plantingLayer; // reused for its editLayer/autotile logic
@@ -365,9 +367,7 @@ public class PlayState extends GameState {
 
     /** Load a classpath texture with Nearest filtering (crisp pixel art, no color softening). */
     private Texture loadTex(String path) {
-        Texture t = new Texture(Gdx.files.classpath(path));
-        t.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
-        return t;
+        return assets.get(path); // lazy load + cache + dispose all handled by Assets
     }
 
     private TextureRegion flippedFull(Texture tex) {
@@ -456,8 +456,7 @@ public class PlayState extends GameState {
         String path = itemRegistry.iconPath(id);
         try {
             if (path == null) { foodRegions.put(id, null); return null; }
-            Texture t = loadTex(path);
-            foodTextures.add(t);
+            Texture t = loadTex(path); // owned + deduped by the Assets cache
             region = new TextureRegion(t);
             region.flip(false, true);
         } catch (Exception ignored) {
@@ -842,16 +841,7 @@ public class PlayState extends GameState {
     public void dispose() {
         // Persist first, but never let a save error block resource cleanup on shutdown.
         try { saveGame(); } catch (Exception e) { e.printStackTrace(); }
-        grassTex.dispose();
-        plowedTex.dispose();
-        tallGrassTex.dispose();
-        wheatTex.dispose();
-        youngWheatTex.dispose();
-        playerTex.dispose();
-        chopTex.dispose();
-        invBarTex.dispose();
-        toggleTex.dispose();
-        fontTex.dispose();
-        for (Texture t : foodTextures) t.dispose();
+        assets.dispose();        // frees every classpath texture (tilesets, player sheets, UI, crops, food)
+        whiteTex.dispose();      // the one procedurally-generated texture, not owned by the cache
     }
 }
