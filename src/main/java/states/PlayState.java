@@ -13,6 +13,7 @@ import core.Assets;
 import core.GameState;
 import core.GameStateManager;
 import crops.CropField;
+import crops.CropGeometry;
 import crops.CropRegistry;
 import crops.CropType;
 import crops.PlantedCrop;
@@ -24,6 +25,7 @@ import items.ItemRegistry;
 import items.data.DefaultItemDataSource;
 import items.data.ItemDataSource;
 import items.data.JsonItemDataSource;
+import render.TextureSlicer;
 import save.CropSave;
 import save.SaveManager;
 import save.WorldSave;
@@ -65,12 +67,9 @@ public class PlayState extends GameState {
     // Bush depth line. Tracks the collision box, which was raised by TILE/8 (see collidesAt/resolveBox),
     // so the player's resting position stays on the "draw in front" side and bushes don't paint over him.
     private static final float DEPTH_OFFSET = 82.5f; // 94.5 - TILE/8
-    // Crops draw TILE wide x 2*TILE tall, centered on a plantable node — the shared corner of a 2x2
-    // block of tilled tiles. The plant's base sits at the node; foliage rises into the tiles above.
-    private static final float CROP_W = TILE, CROP_H = TILE * 2f;
     private static final long DEFAULT_STAGE_MILLIS = 3000L; // 5 stages -> ~12s to mature (tunable per crop)
-    // A planted crop blocks the player with a small solid footprint centered on its base (the node corner).
-    private static final float CROP_COLL_W = 48f, CROP_COLL_H = 24f; // narrower L/R, ~1/4 tile shorter T/B
+    // Crop sprite/footprint geometry on a cell lives in CropGeometry (shared by collision, planting, draw).
+    private final CropGeometry cropGeometry = new CropGeometry(TILE);
 
     private final OrthographicCamera camera;
     private final OrthographicCamera hudCamera; // screen-space HUD, Y-down like the world
@@ -157,12 +156,12 @@ public class PlayState extends GameState {
         toggleTexture       = loadTexture("ui/toggle.png");
         fontTexture         = loadTexture("ui/game_font.png");
 
-        grassRegions    = slice(grassTexture, 1, 3);
-        soilRegions     = slice(plowedTexture, 6, 3); // plowed_soil tiles 1..18, indexed by DualGridSoil
+        grassRegions    = TextureSlicer.slice(grassTexture, 1, 3);
+        soilRegions     = TextureSlicer.slice(plowedTexture, 6, 3); // plowed_soil tiles 1..18, indexed by DualGridSoil
         collisionRegions = new TextureRegion[55];
-        TextureRegion[] tg = slice(tallGrassTexture, 6, 3);
-        TextureRegion[] wh = slice(wheatTexture, 6, 3);
-        TextureRegion[] yw = slice(youngWheatTexture, 6, 3);
+        TextureRegion[] tg = TextureSlicer.slice(tallGrassTexture, 6, 3);
+        TextureRegion[] wh = TextureSlicer.slice(wheatTexture, 6, 3);
+        TextureRegion[] yw = TextureSlicer.slice(youngWheatTexture, 6, 3);
         for (int k = 1; k <= 18; k++) {
             collisionRegions[k]      = tg[k];
             collisionRegions[k + 18] = wh[k];
@@ -195,8 +194,8 @@ public class PlayState extends GameState {
         }
         for (ToolActionBlueprint blueprint : toolData.loadToolActionBlueprints()) buildToolAction(blueprint);
 
-        inventoryBarRegion = flippedFull(inventoryBarTexture);
-        toggleRegion = flippedFull(toggleTexture);
+        inventoryBarRegion = TextureSlicer.flippedFull(inventoryBarTexture);
+        toggleRegion = TextureSlicer.flippedFull(toggleTexture);
         // game_font.png: 1 row of 11 number glyphs, 8x8 each.
         numberRegions = new TextureRegion[11];
         for (int k = 0; k < 11; k++) {
@@ -359,84 +358,15 @@ public class PlayState extends GameState {
         return assets.get(path); // lazy load + cache + dispose all handled by Assets
     }
 
-    private TextureRegion flippedFull(Texture texture) {
-        TextureRegion r = new TextureRegion(texture);
-        r.flip(false, true);
-        return r;
-    }
-
-    private TextureRegion[] slice(Texture texture, int rows, int cols) {
-        // Half-texel inset on each edge (matches the player/crop slicers): with Nearest filtering at a
-        // fractional camera position, sampling exactly on a 32px tile boundary can pick up the adjacent
-        // atlas tile and paint a 1px seam over the tile. Insetting keeps every sample inside this tile.
-        float tw = texture.getWidth(), th = texture.getHeight(), pad = 0.5f;
-        TextureRegion[] regions = new TextureRegion[rows * cols + 1];
-        int k = 1;
-        for (int row = 0; row < rows; row++) {
-            for (int col = 0; col < cols; col++) {
-                int sx = col * 32, sy = row * 32;
-                TextureRegion r = new TextureRegion(texture);
-                r.setRegion((sx + pad) / tw, (sy + pad) / th,
-                            (sx + 32 - pad) / tw, (sy + 32 - pad) / th);
-                r.flip(false, true);
-                regions[k++] = r;
-            }
-        }
-        return regions;
-    }
-
-    /** Slice 64px action frames from a sheet: frames[dir][f] for the given direction rows (Y-flipped, inset). */
-    private TextureRegion[][] sliceActionRows(Texture texture, int[] directionRows, int frameCount) {
-        float tw = texture.getWidth(), th = texture.getHeight(), pad = 0.5f;
-        TextureRegion[][] out = new TextureRegion[directionRows.length][frameCount];
-        for (int dir = 0; dir < directionRows.length; dir++) {
-            int row = directionRows[dir];
-            for (int f = 0; f < frameCount; f++) {
-                TextureRegion r = new TextureRegion(texture);
-                r.setRegion((f * 64 + pad) / tw, (row * 64 + pad) / th,
-                            ((f + 1) * 64 - pad) / tw, ((row + 1) * 64 - pad) / th);
-                r.flip(false, true);
-                out[dir][f] = r;
-            }
-        }
-        return out;
-    }
-
-    /** Re-map each direction's frames into a new order (e.g. reverse and/or drop bad frames). */
-    private TextureRegion[][] reorder(TextureRegion[][] frames, int[] frameOrder) {
-        TextureRegion[][] out = new TextureRegion[frames.length][frameOrder.length];
-        for (int dir = 0; dir < frames.length; dir++)
-            for (int i = 0; i < frameOrder.length; i++)
-                out[dir][i] = frames[dir][frameOrder[i]];
-        return out;
-    }
-
-    /** Slice oversized 128px action frames: frames[dir][f] from each direction's start row (Y-flipped). */
-    private TextureRegion[][] sliceActionRows128(Texture texture, int[] directionStartRows, int frameCount) {
-        float tw = texture.getWidth(), th = texture.getHeight(), pad = 0.5f;
-        TextureRegion[][] out = new TextureRegion[directionStartRows.length][frameCount];
-        for (int dir = 0; dir < directionStartRows.length; dir++) {
-            float y = directionStartRows[dir] * 64f;
-            for (int f = 0; f < frameCount; f++) {
-                float x = f * 128f;
-                TextureRegion r = new TextureRegion(texture);
-                r.setRegion((x + pad) / tw, (y + pad) / th, (x + 128 - pad) / tw, (y + 128 - pad) / th);
-                r.flip(false, true);
-                out[dir][f] = r;
-            }
-        }
-        return out;
-    }
-
     /** Turn a data {@link ToolActionBlueprint} into a live {@link ToolAction}, slicing from the named sheet
      *  with the same helpers the hardcoded version used. */
     private void buildToolAction(ToolActionBlueprint blueprint) {
         if (blueprint == null || blueprint.toolIndex < 0 || blueprint.toolIndex >= toolActions.length) return;
         Texture sheet = "chopping".equals(blueprint.sheetName) ? chopTexture : playerTexture;
         TextureRegion[][] frames = blueprint.oversized
-                ? sliceActionRows128(sheet, blueprint.directionRows, blueprint.rawFrameCount)
-                : sliceActionRows(sheet, blueprint.directionRows, blueprint.rawFrameCount);
-        if (blueprint.frameOrder != null) frames = reorder(frames, blueprint.frameOrder);
+                ? TextureSlicer.sliceActionRows128(sheet, blueprint.directionRows, blueprint.rawFrameCount)
+                : TextureSlicer.sliceActionRows(sheet, blueprint.directionRows, blueprint.rawFrameCount);
+        if (blueprint.frameOrder != null) frames = TextureSlicer.reorder(frames, blueprint.frameOrder);
         int frameCount = (blueprint.frameOrder != null) ? blueprint.frameOrder.length : blueprint.rawFrameCount;
         // Oversized swings draw at 2x, centered on the normal footprint; standard actions draw 1:1.
         float drawSize = blueprint.oversized ? PLAYER_SIZE * 2f : PLAYER_SIZE;
@@ -481,7 +411,8 @@ public class PlayState extends GameState {
             for (int i = 0; i < cropField.rows(); i++) {
                 PlantedCrop crop = cropField.at(j, i);
                 if (crop == null || crop.harvested) continue;
-                if (hitboxOverlaps(hx, hy, cropBoxX(j), cropBoxY(i), CROP_COLL_W, CROP_COLL_H)) return true;
+                if (hitboxOverlaps(hx, hy, cropGeometry.footprintX(j), cropGeometry.footprintY(i),
+                                   cropGeometry.footprintWidth, cropGeometry.footprintHeight)) return true;
             }
         }
         return false;
@@ -491,17 +422,11 @@ public class PlayState extends GameState {
         return hx < bx + bw && hx + HITBOX_W > bx && hy < by + bh && hy + HITBOX_H > by;
     }
 
-    // A crop sits on cell (col,row): its root anchor is the cell centre, and its solid footprint box is
-    // centred there. Single source for that geometry so collision, the highlight, and the draw all agree.
-    private float cropRootX(int col) { return (col + 0.5f) * TILE; }
-    private float cropRootY(int row) { return (row + 0.5f) * TILE; }
-    private float cropBoxX(int col) { return cropRootX(col) - CROP_COLL_W / 2f; }
-    private float cropBoxY(int row) { return cropRootY(row) - CROP_COLL_H / 2f; }
-
     /** Would a crop planted in cell (col,row) immediately overlap the player where they stand now? */
     private boolean playerOverlapsCropCell(int col, int row) {
         return hitboxOverlaps(playerX + HITBOX_OFF_X, playerY + HITBOX_OFF_Y,
-                              cropBoxX(col), cropBoxY(row), CROP_COLL_W, CROP_COLL_H);
+                              cropGeometry.footprintX(col), cropGeometry.footprintY(row),
+                              cropGeometry.footprintWidth, cropGeometry.footprintHeight);
     }
 
     private void resolveCollisions() {
@@ -516,7 +441,8 @@ public class PlayState extends GameState {
             for (int i = 0; i < cropField.rows(); i++) {
                 PlantedCrop crop = cropField.at(j, i);
                 if (crop == null || crop.harvested) continue;
-                resolveBox(cropBoxX(j), cropBoxY(i), CROP_COLL_W, CROP_COLL_H);
+                resolveBox(cropGeometry.footprintX(j), cropGeometry.footprintY(i),
+                           cropGeometry.footprintWidth, cropGeometry.footprintHeight);
             }
         }
     }
@@ -815,15 +741,14 @@ public class PlayState extends GameState {
                 if (crop == null) continue;
                 // Centered on the cell, with the root anchor (cell center) sitting 1/4 tile above the
                 // sprite's bottom. The post-harvest hole frame sits an extra 1/8 tile lower to line up.
-                float cropTop = cropRootY(i) - (CROP_H - TILE / 4f);
-                float y = cropTop + (crop.harvested ? TILE / 8f : 0f);
+                float y = cropGeometry.spriteTopY(i) + (crop.harvested ? TILE / 8f : 0f);
                 // Depth ground-line: the player goes in front of the crop once their feet pass ~2/3 down
                 // the 2-tile-tall sprite. This is the old CropsLayer mask (feetY <= column*TILE + 100*zoom).
-                float threshold = cropTop + CROP_H * (126f / 192f);
+                float threshold = cropGeometry.groundLineY(i);
                 boolean drawIt = inFront ? (feetY <= threshold) : (feetY >= threshold);
                 if (!drawIt) continue;
                 TextureRegion r = crop.type.stage(crop.stage(now));
-                batch.draw(r, cropRootX(j) - CROP_W / 2f, y, CROP_W, CROP_H);
+                batch.draw(r, cropGeometry.spriteX(j), y, cropGeometry.spriteWidth, cropGeometry.spriteHeight);
             }
         }
     }
