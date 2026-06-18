@@ -2,8 +2,6 @@ package states;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
-import com.badlogic.gdx.graphics.Color;
-import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
@@ -27,6 +25,7 @@ import items.data.JsonItemDataSource;
 import physics.CollisionResolver;
 import render.GameCamera;
 import render.TextureSlicer;
+import render.WorldRenderer;
 import save.CropSave;
 import save.SaveManager;
 import save.WorldSave;
@@ -59,9 +58,6 @@ public class PlayState extends GameState {
     private static final float MOVE_SPEED = 270f;
     private static final float ANIM_FRAME_TIME = 16f / 144f; // tool-action animation cadence
     private static final float COLLISION_ERR = 0.45f; // passed to CollisionResolver (push past the edge)
-    // Bush depth line. Tracks the collision box, which was raised by TILE/8 (see CollisionResolver),
-    // so the player's resting position stays on the "draw in front" side and bushes don't paint over him.
-    private static final float DEPTH_OFFSET = 82.5f; // 94.5 - TILE/8
     private static final long DEFAULT_STAGE_MILLIS = 3000L; // 5 stages -> ~12s to mature (tunable per crop)
     // Crop sprite/footprint geometry on a cell lives in CropGeometry (shared by collision, planting, draw).
     private final CropGeometry cropGeometry = new CropGeometry(TILE);
@@ -70,8 +66,8 @@ public class PlayState extends GameState {
 
     private final Texture grassTexture, plowedTexture, tallGrassTexture, wheatTexture, youngWheatTexture,
             playerTexture, chopTexture;
-    private final TextureRegion[] grassRegions, soilRegions, collisionRegions;
     private final InventoryHud inventoryHud; // screen-space inventory bar (owns its regions + icon cache)
+    private final WorldRenderer worldRenderer; // grass/soil/crops/bushes/player depth-sorted draws
 
     // Every classpath texture is owned by one lazy cache (load-on-first-use + dispose-all).
     private final Assets assets = new Assets();
@@ -91,8 +87,6 @@ public class PlayState extends GameState {
     private final CropRegistry cropRegistry;
     private final ItemRegistry itemRegistry;
     private final CropField cropField;
-    private final Texture whiteTexture;      // 1x1 white pixel for the tile highlight (handmade, no ShapeRenderer)
-    private final TextureRegion whiteRegion;
     private int hoverCol = -1, hoverRow = -1; // tile under the mouse this frame
     private boolean hoverPlantable = false;   // hovered tile is tilled soil and empty
 
@@ -118,9 +112,10 @@ public class PlayState extends GameState {
         Texture toggleTexture       = loadTexture("ui/toggle.png");
         Texture fontTexture         = loadTexture("ui/game_font.png");
 
-        grassRegions    = TextureSlicer.slice(grassTexture, 1, 3);
-        soilRegions     = TextureSlicer.slice(plowedTexture, 6, 3); // plowed_soil tiles 1..18, indexed by DualGridSoil
-        collisionRegions = new TextureRegion[55];
+        // World tile regions — handed to WorldRenderer, which owns the drawing.
+        TextureRegion[] grassRegions    = TextureSlicer.slice(grassTexture, 1, 3);
+        TextureRegion[] soilRegions     = TextureSlicer.slice(plowedTexture, 6, 3); // plowed_soil 1..18
+        TextureRegion[] collisionRegions = new TextureRegion[55];
         TextureRegion[] tg = TextureSlicer.slice(tallGrassTexture, 6, 3);
         TextureRegion[] wh = TextureSlicer.slice(wheatTexture, 6, 3);
         TextureRegion[] yw = TextureSlicer.slice(youngWheatTexture, 6, 3);
@@ -251,13 +246,8 @@ public class PlayState extends GameState {
         cropField = new CropField(collisionLayer.cols(), collisionLayer.rows());
         collisionResolver = new CollisionResolver(collisionLayer, cropField, cropGeometry, TILE, COLLISION_ERR);
         if (sCrops != null) restoreCrops(sCrops);
-        Pixmap pm = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-        pm.setColor(Color.WHITE);
-        pm.fill();
-        whiteTexture = new Texture(pm);
-        pm.dispose();
-        whiteRegion = new TextureRegion(whiteTexture);
-
+        worldRenderer = new WorldRenderer(grassLayer, soil, collisionLayer, cropField, cropGeometry, TILE,
+                grassRegions, soilRegions, collisionRegions);
     }
 
     /** Repopulate the crop field from the crops read out of the save. */
@@ -337,30 +327,6 @@ public class PlayState extends GameState {
                 player.hitboxX(), player.hitboxY(), player.hitboxW(), player.hitboxH(),
                 cropGeometry.footprintX(col), cropGeometry.footprintY(row),
                 cropGeometry.footprintWidth, cropGeometry.footprintHeight);
-    }
-
-    private void drawCollision(SpriteBatch batch, boolean inFront) {
-        float feetY = player.feetY();
-        for (int j = 0; j < collisionLayer.cols(); j++) {
-            for (int i = 0; i < collisionLayer.rows(); i++) {
-                int v = collisionLayer.get(j, i);
-                if (v < 1 || v >= collisionRegions.length || collisionRegions[v] == null) continue;
-                float threshold = i * TILE + DEPTH_OFFSET;
-                boolean drawIt = inFront ? (feetY <= threshold) : (feetY >= threshold);
-                if (drawIt) batch.draw(collisionRegions[v], j * TILE, i * TILE, TILE, TILE);
-            }
-        }
-    }
-
-    private void drawArray(SpriteBatch batch, TileLayer layer, TextureRegion[] regions) {
-        for (int j = 0; j < layer.cols(); j++) {
-            for (int i = 0; i < layer.rows(); i++) {
-                int v = layer.get(j, i);
-                if (v >= 1 && v < regions.length && regions[v] != null) {
-                    batch.draw(regions[v], j * TILE, i * TILE, TILE, TILE);
-                }
-            }
-        }
     }
 
     @Override
@@ -489,68 +455,11 @@ public class PlayState extends GameState {
         soil.till(col, row);
     }
 
-    private void drawPlayer(SpriteBatch batch) {
-        ToolAction action = toolActionSystem.current();
-        if (action != null) {
-            TextureRegion frame = action.frames[toolActionSystem.currentDir()][toolActionSystem.currentFrame()];
-            batch.draw(frame, player.x() + action.offX, player.y() + action.offY, action.drawSize, action.drawSize);
-        } else {
-            batch.draw(player.currentFrame(), player.x(), player.y(), PlayerCharacter.SIZE, PlayerCharacter.SIZE);
-        }
-    }
-
     @Override
     public void render(SpriteBatch batch) {
-        batch.setProjectionMatrix(gameCamera.worldCombined());
-        batch.begin();
-        drawArray(batch, grassLayer, grassRegions);
-        soil.render(batch, soilRegions);
-        drawHighlight(batch);
-        drawCrops(batch, false);     // crops rooted above the player -> behind
-        drawCollision(batch, false); // bushes behind
-        drawPlayer(batch);
-        drawCollision(batch, true);  // bushes in front
-        drawCrops(batch, true);      // crops rooted at/below the player -> in front
-        batch.end();
-
+        worldRenderer.render(batch, gameCamera.worldCombined(), player, toolActionSystem,
+                             hoverCol, hoverRow, hoverPlantable);
         inventoryHud.render(batch, gameCamera.hudCombined(), inventoryItems, inventoryAmounts, selectedSlot);
-    }
-
-    /** Highlight the hovered tile: green when plantable, yellow when it holds a mature (harvestable) crop. */
-    private void drawHighlight(SpriteBatch batch) {
-        if (hoverCol < 0 || hoverRow < 0) return;
-        if (hoverPlantable) {
-            batch.setColor(0.3f, 1f, 0.3f, 0.35f);
-        } else {
-            PlantedCrop crop = cropField.at(hoverCol, hoverRow);
-            if (crop == null || !crop.isMature(System.currentTimeMillis())) return;
-            batch.setColor(1f, 0.95f, 0.3f, 0.35f);
-        }
-        // A tile-sized highlight over the hovered cell.
-        batch.draw(whiteRegion, hoverCol * TILE, hoverRow * TILE, TILE, TILE);
-        batch.setColor(Color.WHITE);
-    }
-
-    /** Draw planted crops at their current growth stage, depth-split around the player like the bushes. */
-    private void drawCrops(SpriteBatch batch, boolean inFront) {
-        long now = System.currentTimeMillis();
-        float feetY = player.feetY();
-        for (int j = 0; j < cropField.cols(); j++) {
-            for (int i = 0; i < cropField.rows(); i++) {
-                PlantedCrop crop = cropField.at(j, i);
-                if (crop == null) continue;
-                // Centered on the cell, with the root anchor (cell center) sitting 1/4 tile above the
-                // sprite's bottom. The post-harvest hole frame sits an extra 1/8 tile lower to line up.
-                float y = cropGeometry.spriteTopY(i) + (crop.harvested ? TILE / 8f : 0f);
-                // Depth ground-line: the player goes in front of the crop once their feet pass ~2/3 down
-                // the 2-tile-tall sprite. This is the old CropsLayer mask (feetY <= column*TILE + 100*zoom).
-                float threshold = cropGeometry.groundLineY(i);
-                boolean drawIt = inFront ? (feetY <= threshold) : (feetY >= threshold);
-                if (!drawIt) continue;
-                TextureRegion r = crop.type.stage(crop.stage(now));
-                batch.draw(r, cropGeometry.spriteX(j), y, cropGeometry.spriteWidth, cropGeometry.spriteHeight);
-            }
-        }
     }
 
     @Override
@@ -563,6 +472,6 @@ public class PlayState extends GameState {
         // Persist first, but never let a save error block resource cleanup on shutdown.
         try { saveGame(); } catch (Exception e) { e.printStackTrace(); }
         assets.dispose();        // frees every classpath texture (tilesets, player sheets, UI, crops, icons)
-        whiteTexture.dispose();  // the one procedurally-generated texture, not owned by the cache
+        worldRenderer.dispose(); // frees the procedurally-generated highlight texture (not in the cache)
     }
 }
