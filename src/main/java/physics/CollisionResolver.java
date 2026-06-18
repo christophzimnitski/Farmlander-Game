@@ -43,36 +43,45 @@ public final class CollisionResolver {
 
     /** Would the given world-space hitbox overlap any solid tile or planted-crop footprint? */
     public boolean collidesAt(float hx, float hy, float hw, float hh) {
-        for (int j = 0; j < collision.cols(); j++)
-            for (int i = 0; i < collision.rows(); i++) {
-                if (!blocks(collision.get(j, i))) continue;
-                if (overlaps(hx, hy, hw, hh, j * tile, i * tile - collidableRaise, tile, tile)) return true;
-            }
-        for (int j = 0; j < crops.cols(); j++)
-            for (int i = 0; i < crops.rows(); i++) {
+        int loCol = clampCol((int) Math.floor(hx / tile) - 1);
+        int hiCol = clampCol((int) Math.floor((hx + hw) / tile) + 1);
+        int loRow = clampRow((int) Math.floor(hy / tile) - 1);
+        int hiRow = clampRow((int) Math.floor((hy + hh) / tile) + 1);
+        for (int j = loCol; j <= hiCol; j++)
+            for (int i = loRow; i <= hiRow; i++) {
+                if (blocks(collision.get(j, i))
+                        && overlaps(hx, hy, hw, hh, j * tile, i * tile - collidableRaise, tile, tile)) return true;
                 PlantedCrop crop = crops.at(j, i);
-                if (crop == null || crop.harvested) continue;
-                if (overlaps(hx, hy, hw, hh, cropGeometry.footprintX(j), cropGeometry.footprintY(i),
-                             cropGeometry.footprintWidth, cropGeometry.footprintHeight)) return true;
+                if (crop != null && !crop.harvested
+                        && overlaps(hx, hy, hw, hh, cropGeometry.footprintX(j), cropGeometry.footprintY(i),
+                                    cropGeometry.footprintWidth, cropGeometry.footprintHeight)) return true;
             }
         return false;
     }
 
-    /** Push the body out of every solid tile and crop footprint it currently overlaps (in scan order). */
+    /** Push the body out of every solid tile and crop footprint it currently overlaps (in scan order).
+     *  Solid tiles first, then crops — same order as a full-grid scan, just limited to the cells the
+     *  hitbox can reach (push-out is order-dependent, so the order is preserved exactly). */
     public void resolve(Body body) {
-        for (int j = 0; j < collision.cols(); j++)
-            for (int i = 0; i < collision.rows(); i++) {
-                if (!blocks(collision.get(j, i))) continue;
-                push(body, j * tile, i * tile - collidableRaise, tile, tile);
-            }
-        for (int j = 0; j < crops.cols(); j++)
-            for (int i = 0; i < crops.rows(); i++) {
+        int loCol = clampCol((int) Math.floor(body.hitboxX() / tile) - 1);
+        int hiCol = clampCol((int) Math.floor((body.hitboxX() + body.hitboxW()) / tile) + 1);
+        int loRow = clampRow((int) Math.floor(body.hitboxY() / tile) - 1);
+        int hiRow = clampRow((int) Math.floor((body.hitboxY() + body.hitboxH()) / tile) + 1);
+        for (int j = loCol; j <= hiCol; j++)
+            for (int i = loRow; i <= hiRow; i++)
+                if (blocks(collision.get(j, i))) push(body, j * tile, i * tile - collidableRaise, tile, tile);
+        for (int j = loCol; j <= hiCol; j++)
+            for (int i = loRow; i <= hiRow; i++) {
                 PlantedCrop crop = crops.at(j, i);
-                if (crop == null || crop.harvested) continue;
-                push(body, cropGeometry.footprintX(j), cropGeometry.footprintY(i),
-                     cropGeometry.footprintWidth, cropGeometry.footprintHeight);
+                if (crop != null && !crop.harvested)
+                    push(body, cropGeometry.footprintX(j), cropGeometry.footprintY(i),
+                         cropGeometry.footprintWidth, cropGeometry.footprintHeight);
             }
     }
+
+    private int clampCol(int col) { return Math.max(0, Math.min(collision.cols() - 1, col)); }
+
+    private int clampRow(int row) { return Math.max(0, Math.min(collision.rows() - 1, row)); }
 
     private void push(Body body, float bx, float by, float bw, float bh) {
         float[] d = resolveBox(body.hitboxX(), body.hitboxY(), body.hitboxW(), body.hitboxH(),
