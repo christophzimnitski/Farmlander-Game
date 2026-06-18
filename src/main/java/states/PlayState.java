@@ -39,9 +39,9 @@ import tools.data.DefaultToolActionDataSource;
 import tools.data.JsonToolActionDataSource;
 import tools.data.ToolActionDataSource;
 import tools.data.ToolActionBlueprint;
+import world.ChunkedTileLayer;
 import world.DualGridSoil;
 import world.GrassGenerator;
-import world.TileLayer;
 
 import static utilz.Constants.PlayerActionConstants.playerAnimationArrays;
 
@@ -55,6 +55,10 @@ import static utilz.Constants.PlayerActionConstants.playerAnimationArrays;
  */
 public class PlayState extends GameState {
     private static final float TILE = 96f;          // 64 * zoom(1.5)
+    // The world is bounded (Stardew-style, not infinite). All layers share these dimensions on one grid,
+    // so collision/soil/crops span the whole map instead of an old 40x22 corner of the larger grass field.
+    private static final int WORLD_COLS = 400;
+    private static final int WORLD_ROWS = 220;
     private static final float MOVE_SPEED = 270f;
     private static final float ANIM_FRAME_TIME = 16f / 144f; // tool-action animation cadence
     private static final float COLLISION_ERR = 0.45f; // passed to CollisionResolver (push past the edge)
@@ -75,7 +79,7 @@ public class PlayState extends GameState {
 
     // World grid (single source of truth for all per-cell state). Soil is a dual grid: gameplay reads
     // the `tilled` flags on `soil`; the visuals are derived on a half-tile-offset grid at render time.
-    private final TileLayer grassLayer, collisionLayer;
+    private final ChunkedTileLayer grassLayer, collisionLayer;
     private final DualGridSoil soil;
     private final CollisionResolver collisionResolver;
     private PlayerCharacter player; // position, facing, tool, walk animation; also the collision Body
@@ -173,9 +177,10 @@ public class PlayState extends GameState {
             animation = ws.currentAnimation;
             sCrops = ws.crops;
         } else {
-            sGrass = GrassGenerator.randomGrass(400, 220, TILE).data();
-            sPlanting = new int[40][22];
-            sCollision = new int[40][22];
+            // Fresh world: a seeded grass field (deterministic) and empty collision/soil at world size.
+            sGrass = null; // signals "generate" below
+            sPlanting = null;
+            sCollision = null;
             sInvItems = null;
             sInvAmounts = null;
             sSelectedSlot = 0;
@@ -185,13 +190,13 @@ public class PlayState extends GameState {
             selected = new int[]{32, 33, 34, 35};
             sCrops = null;
         }
-        collisionLayer = new TileLayer(sCollision, TILE);
-        grassLayer = new TileLayer(sGrass, TILE);
-        // Soil is a per-cell tilled flag. Normalize any legacy save (old autotile tile-indices) to 0/1
-        // so the array now means "tilled?" — the dual grid derives the actual tiles at render time.
-        for (int[] column : sPlanting)
-            for (int r = 0; r < column.length; r++) column[r] = (column[r] != 0) ? 1 : 0;
-        soil = new DualGridSoil(new TileLayer(sPlanting, TILE));
+        // All layers live on one bounded grid (WORLD_COLS x WORLD_ROWS). Saved grids are placed into it —
+        // an old 40x22 save lands in the corner; a current full-size save fills it. The tilled layer is
+        // normalized to 0/1 (any legacy autotile index becomes "tilled?"); the dual grid derives the tiles.
+        collisionLayer = placeIntoWorld(sCollision, false);
+        grassLayer = (sGrass != null) ? placeIntoWorld(sGrass, false)
+                                      : GrassGenerator.randomGrass(WORLD_COLS, WORLD_ROWS, TILE, System.nanoTime());
+        soil = new DualGridSoil(placeIntoWorld(sPlanting, true));
         // Rebuild the live Inventory from saved primitives (it's no longer serialized directly).
         Inventory inv = new Inventory(sInvItems != null ? sInvItems.length : 10);
         inventoryItems = inv.getInventory();      // shared refs: mutating these mutates the live Inventory
@@ -239,6 +244,23 @@ public class PlayState extends GameState {
     /** Load a classpath texture with Nearest filtering (crisp pixel art, no color softening). */
     private Texture loadTexture(String path) {
         return assets.get(path); // lazy load + cache + dispose all handled by Assets
+    }
+
+    /** Build a world-sized layer and copy a saved grid into it (top-left aligned). A null source yields an
+     *  empty layer; a smaller source (an old 40x22 save) occupies the corner. When {@code asTilledFlag},
+     *  any nonzero source cell normalizes to 1 (legacy autotile indices → "tilled?"). */
+    private static ChunkedTileLayer placeIntoWorld(int[][] src, boolean asTilledFlag) {
+        ChunkedTileLayer layer = new ChunkedTileLayer(WORLD_COLS, WORLD_ROWS, TILE);
+        if (src == null) return layer;
+        int cols = Math.min(src.length, WORLD_COLS);
+        for (int c = 0; c < cols; c++) {
+            int rows = Math.min(src[c].length, WORLD_ROWS);
+            for (int r = 0; r < rows; r++) {
+                int v = asTilledFlag ? (src[c][r] != 0 ? 1 : 0) : src[c][r];
+                layer.set(c, r, v);
+            }
+        }
+        return layer;
     }
 
     /** Turn a data {@link ToolActionBlueprint} into a live {@link ToolAction}, slicing from the named sheet

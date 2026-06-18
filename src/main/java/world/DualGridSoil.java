@@ -54,9 +54,9 @@ public final class DualGridSoil {
         return TILE_FOR_MASK[mask & 0xF];
     }
 
-    private final TileLayer tilled; // 1 = tilled, 0 = not; this is the backing int[][] the save stores
+    private final ChunkedTileLayer tilled; // 1 = tilled, 0 = not; the per-cell flags the save persists
 
-    public DualGridSoil(TileLayer tilled) {
+    public DualGridSoil(ChunkedTileLayer tilled) {
         this.tilled = tilled;
     }
 
@@ -67,7 +67,7 @@ public final class DualGridSoil {
     public void clear(int col, int row) { tilled.set(col, row, 0); }
 
     /** The world-grid layer of tilled flags (for sizing, save, and coordinate helpers). */
-    public TileLayer grid() { return tilled; }
+    public ChunkedTileLayer grid() { return tilled; }
 
     /** Corner mask for the dual-grid node at the corner shared by cells around (nodeCol,nodeRow). */
     public int maskAt(int nodeCol, int nodeRow) {

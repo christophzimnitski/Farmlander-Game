@@ -3,7 +3,7 @@ package physics;
 import crops.CropField;
 import crops.CropGeometry;
 import crops.PlantedCrop;
-import world.TileLayer;
+import world.ChunkedTileLayer;
 
 /**
  * AABB collision against the world: solid tiles on the collision layer and the footprints of planted
@@ -19,14 +19,14 @@ public final class CollisionResolver {
     // Tile values that sit on the collision layer but are walkable (decorative variants of the bushes).
     private static final int[] NON_COLLIDABLE = {7, 8, 9, 25, 26, 27, 43, 44, 45};
 
-    private final TileLayer collision;
+    private final ChunkedTileLayer collision;
     private final CropField crops;
     private final CropGeometry cropGeometry;
     private final float tile;
     private final float collidableRaise; // tile/8: collidables are raised so the player rests at their base
     private final float err;             // nudge past the box edge so re-collision doesn't stick
 
-    public CollisionResolver(TileLayer collision, CropField crops, CropGeometry cropGeometry,
+    public CollisionResolver(ChunkedTileLayer collision, CropField crops, CropGeometry cropGeometry,
                              float tile, float err) {
         this.collision = collision;
         this.crops = crops;

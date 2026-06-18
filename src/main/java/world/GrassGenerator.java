@@ -5,14 +5,17 @@ import java.util.Random;
 /**
  * Builds the random background grass layer — the weighted tile pick lifted from the old
  * {@code GrassLayer.editLayer}: mostly tile 0 (plain ground shows through) with occasional detail tiles.
- * Used only as the fallback when there's no save to load grass from.
+ * Used to generate a fresh world when there's no save to load grass from.
+ *
+ * <p>Generation is <b>seeded</b> so a given {@code seed} always produces the same bounded world — the world
+ * is finite (Stardew-style), so the seed fixes one reproducible map rather than driving infinite terrain.
  */
 public final class GrassGenerator {
     private GrassGenerator() {}
 
-    public static TileLayer randomGrass(int cols, int rows, float tileSize) {
-        TileLayer layer = new TileLayer(cols, rows, tileSize);
-        Random random = new Random();
+    public static ChunkedTileLayer randomGrass(int cols, int rows, float tileSize, long seed) {
+        ChunkedTileLayer layer = new ChunkedTileLayer(cols, rows, tileSize);
+        Random random = new Random(seed);
         for (int col = 0; col < cols; col++) {
             for (int row = 0; row < rows; row++) {
                 double roll = random.nextDouble();

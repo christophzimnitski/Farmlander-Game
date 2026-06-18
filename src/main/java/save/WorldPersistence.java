@@ -5,8 +5,8 @@ import crops.CropRegistry;
 import crops.CropType;
 import crops.PlantedCrop;
 import entities.PlayerCharacter;
+import world.ChunkedTileLayer;
 import world.DualGridSoil;
-import world.TileLayer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,14 +21,14 @@ import java.util.List;
  * given; {@link #restoreCrops} replays saved crops back into the field.
  */
 public final class WorldPersistence {
-    private final TileLayer collision, grass;
+    private final ChunkedTileLayer collision, grass;
     private final DualGridSoil soil;
     private final CropField cropField;
     private final PlayerCharacter player;
     private final int[] inventoryItems, inventoryAmounts; // shared live refs — already current at save time
     private final CropRegistry cropRegistry;
 
-    public WorldPersistence(TileLayer collision, TileLayer grass, DualGridSoil soil, CropField cropField,
+    public WorldPersistence(ChunkedTileLayer collision, ChunkedTileLayer grass, DualGridSoil soil, CropField cropField,
                             PlayerCharacter player, int[] inventoryItems, int[] inventoryAmounts,
                             CropRegistry cropRegistry) {
         this.collision = collision;
@@ -66,9 +66,9 @@ public final class WorldPersistence {
         ws.invItems = inventoryItems;
         ws.invAmounts = inventoryAmounts;
         ws.invToggle = selectedSlot;
-        ws.collision = collision.data();
-        ws.planting = soil.grid().data(); // tilled flags (0/1)
-        ws.grass = grass.data();
+        ws.collision = collision.toDense();
+        ws.planting = soil.grid().toDense(); // tilled flags (0/1)
+        ws.grass = grass.toDense();
 
         // Snapshot the crop grid as plain CropSave records (no PlantedCrop/CropType, which hold textures).
         List<CropSave> crops = new ArrayList<>();

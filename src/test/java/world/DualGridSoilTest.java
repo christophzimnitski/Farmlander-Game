@@ -41,7 +41,7 @@ class DualGridSoilTest {
     void singleTilledCellFormsAFourTileSquare() {
         // One tilled cell is seen by its four surrounding corner nodes. Each node sees exactly one
         // filled corner, so the four nodes draw the four distinct outer-corner tiles that meet in a square.
-        DualGridSoil soil = new DualGridSoil(new TileLayer(3, 3, 1f));
+        DualGridSoil soil = new DualGridSoil(new ChunkedTileLayer(3, 3, 1f));
         soil.till(1, 1);
 
         int br = soil.maskAt(1, 1); // node whose bottom-right cell is (1,1)
@@ -66,7 +66,7 @@ class DualGridSoilTest {
     @Test
     void interiorOfAFilledBlockIsTheCenterTile() {
         // A node fully surrounded by tilled cells → the nine-slice center (tile 11).
-        DualGridSoil soil = new DualGridSoil(new TileLayer(3, 3, 1f));
+        DualGridSoil soil = new DualGridSoil(new ChunkedTileLayer(3, 3, 1f));
         for (int c = 0; c < 3; c++)
             for (int r = 0; r < 3; r++) soil.till(c, r);
         assertEquals(11, DualGridSoil.tileForMask(soil.maskAt(1, 1)));

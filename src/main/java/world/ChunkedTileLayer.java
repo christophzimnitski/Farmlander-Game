@@ -48,6 +48,15 @@ public final class ChunkedTileLayer {
         return layer;
     }
 
+    /** Materialise the whole bounded grid as a dense {@code [col][row]} array (used at the save boundary). */
+    public int[][] toDense() {
+        int[][] cells = new int[cols][rows];
+        for (int col = 0; col < cols; col++)
+            for (int row = 0; row < rows; row++)
+                cells[col][row] = get(col, row);
+        return cells;
+    }
+
     public int cols() { return cols; }
 
     public int rows() { return rows; }

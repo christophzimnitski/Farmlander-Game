@@ -12,8 +12,8 @@ import crops.PlantedCrop;
 import entities.PlayerCharacter;
 import tools.ToolAction;
 import tools.ToolActionSystem;
+import world.ChunkedTileLayer;
 import world.DualGridSoil;
-import world.TileLayer;
 
 /**
  * Draws the world for the play screen: the grass layer, the dual-grid soil, the hover highlight, then the
@@ -28,9 +28,9 @@ public final class WorldRenderer {
     // position stays on the "draw in front" side and bushes don't paint over him.
     private static final float DEPTH_OFFSET = 82.5f; // 94.5 - TILE/8
 
-    private final TileLayer grass;
+    private final ChunkedTileLayer grass;
     private final DualGridSoil soil;
-    private final TileLayer collision;
+    private final ChunkedTileLayer collision;
     private final CropField crops;
     private final CropGeometry cropGeometry;
     private final float tile;
@@ -39,7 +39,7 @@ public final class WorldRenderer {
     private final Texture whiteTexture;
     private final TextureRegion whiteRegion;
 
-    public WorldRenderer(TileLayer grass, DualGridSoil soil, TileLayer collision, CropField crops,
+    public WorldRenderer(ChunkedTileLayer grass, DualGridSoil soil, ChunkedTileLayer collision, CropField crops,
                          CropGeometry cropGeometry, float tile,
                          TextureRegion[] grassRegions, TextureRegion[] soilRegions,
                          TextureRegion[] collisionRegions) {
@@ -92,7 +92,7 @@ public final class WorldRenderer {
 
     private int maxCol(float worldX, int cols) { return clamp((int) Math.floor(worldX / tile) + 1, 0, cols - 1); }
 
-    private void drawArray(SpriteBatch batch, TileLayer layer, TextureRegion[] regions, Rectangle view) {
+    private void drawArray(SpriteBatch batch, ChunkedTileLayer layer, TextureRegion[] regions, Rectangle view) {
         int loCol = minCol(view.x, layer.cols()), hiCol = maxCol(view.x + view.width, layer.cols());
         int loRow = minCol(view.y, layer.rows()), hiRow = maxCol(view.y + view.height, layer.rows());
         for (int j = loCol; j <= hiCol; j++) {
@@ -107,7 +107,7 @@ public final class WorldRenderer {
 
     /** Soil nodes sit on cell corners, so the node grid is one wider/taller than the cells (0..cols). */
     private void drawSoil(SpriteBatch batch, Rectangle view) {
-        TileLayer grid = soil.grid();
+        ChunkedTileLayer grid = soil.grid();
         int loCol = clamp((int) Math.floor(view.x / tile) - 1, 0, grid.cols());
         int hiCol = clamp((int) Math.floor((view.x + view.width) / tile) + 1, 0, grid.cols());
         int loRow = clamp((int) Math.floor(view.y / tile) - 1, 0, grid.rows());

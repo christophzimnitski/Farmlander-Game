@@ -7,7 +7,7 @@ import crops.CropField;
 import crops.CropGeometry;
 import crops.CropType;
 import org.junit.jupiter.api.Test;
-import world.TileLayer;
+import world.ChunkedTileLayer;
 
 /**
  * Exercises the spatial-query windowing in {@link CollisionResolver#collidesAt} and {@link
@@ -19,15 +19,15 @@ class CollisionResolverTest {
     private static final float TILE = 96f;
     private static final float ERR = 0.45f;
 
-    private CollisionResolver resolver(TileLayer collision, CropField crops) {
+    private CollisionResolver resolver(ChunkedTileLayer collision, CropField crops) {
         return new CollisionResolver(collision, crops, new CropGeometry(TILE), TILE, ERR);
     }
 
-    private TileLayer emptyGrid() { return new TileLayer(5, 5, TILE); }
+    private ChunkedTileLayer emptyGrid() { return new ChunkedTileLayer(5, 5, TILE); }
 
     @Test
     void hitboxInsideSolidCellCollides() {
-        TileLayer c = emptyGrid();
+        ChunkedTileLayer c = emptyGrid();
         c.set(2, 2, 1); // solid
         CollisionResolver r = resolver(c, new CropField(5, 5));
         assertTrue(r.collidesAt(200, 200, 20, 20));
@@ -35,7 +35,7 @@ class CollisionResolverTest {
 
     @Test
     void hitboxFarFromAnySolidDoesNotCollide() {
-        TileLayer c = emptyGrid();
+        ChunkedTileLayer c = emptyGrid();
         c.set(2, 2, 1);
         CollisionResolver r = resolver(c, new CropField(5, 5));
         assertFalse(r.collidesAt(10, 10, 20, 20)); // cell (0,0), nowhere near
@@ -45,7 +45,7 @@ class CollisionResolverTest {
     void hitboxReachesIntoSolidInTheNextCell() {
         // Hitbox sits in cell (1,2) but its right edge pokes past x=192 into cell (2,2)'s solid box.
         // A window that only scanned the hitbox's own cell would miss it — the +1 padding must catch it.
-        TileLayer c = emptyGrid();
+        ChunkedTileLayer c = emptyGrid();
         c.set(2, 2, 1);
         CollisionResolver r = resolver(c, new CropField(5, 5));
         assertTrue(r.collidesAt(180, 200, 20, 20)); // x-span [180,200] overlaps solid x[192,288]
@@ -64,7 +64,7 @@ class CollisionResolverTest {
 
     @Test
     void resolvePushesBodyClearOfSolid() {
-        TileLayer c = emptyGrid();
+        ChunkedTileLayer c = emptyGrid();
         c.set(2, 2, 1); // solid box x[192,288], y[180,276]
         CollisionResolver r = resolver(c, new CropField(5, 5));
         // Body clipped shallowly into the solid's left edge (the realistic walk-into-a-tile case): its
