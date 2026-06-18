@@ -19,11 +19,11 @@ import crops.data.CropDataSource;
 import crops.data.DefaultCropDataSource;
 import crops.data.JsonCropDataSource;
 import entities.Inventory;
+import entities.PlayerCharacter;
 import items.ItemRegistry;
 import items.data.DefaultItemDataSource;
 import items.data.ItemDataSource;
 import items.data.JsonItemDataSource;
-import physics.Body;
 import physics.CollisionResolver;
 import render.GameCamera;
 import render.TextureSlicer;
@@ -44,7 +44,6 @@ import world.TileLayer;
 import static utilz.Constants.PlayerActionConstants.playerAnimationArrays;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -57,13 +56,8 @@ import java.util.List;
  */
 public class PlayState extends GameState {
     private static final float TILE = 96f;          // 64 * zoom(1.5)
-    private static final float PLAYER_SIZE = 240f;  // 32 * 5 * zoom(1.5)
     private static final float MOVE_SPEED = 270f;
-    private static final float ANIM_FRAME_TIME = 16f / 144f;
-    private static final int WALK_FRAMES = 9;
-
-    private static final float HITBOX_OFF_X = 75f, HITBOX_OFF_Y = 195f;
-    private static final float HITBOX_W = 90f, HITBOX_H = 48f;
+    private static final float ANIM_FRAME_TIME = 16f / 144f; // tool-action animation cadence
     private static final float COLLISION_ERR = 0.45f; // passed to CollisionResolver (push past the edge)
     // Bush depth line. Tracks the collision box, which was raised by TILE/8 (see CollisionResolver),
     // so the player's resting position stays on the "draw in front" side and bushes don't paint over him.
@@ -77,7 +71,6 @@ public class PlayState extends GameState {
     private final Texture grassTexture, plowedTexture, tallGrassTexture, wheatTexture, youngWheatTexture,
             playerTexture, chopTexture;
     private final TextureRegion[] grassRegions, soilRegions, collisionRegions;
-    private final TextureRegion[][] playerFrames;
     private final InventoryHud inventoryHud; // screen-space inventory bar (owns its regions + icon cache)
 
     // Every classpath texture is owned by one lazy cache (load-on-first-use + dispose-all).
@@ -88,14 +81,7 @@ public class PlayState extends GameState {
     private final TileLayer grassLayer, collisionLayer;
     private final DualGridSoil soil;
     private final CollisionResolver collisionResolver;
-    // Adapts the player to the collision Body interface: hitbox = player position + the fixed feet offset.
-    private final Body playerBody = new Body() {
-        public float hitboxX() { return playerX + HITBOX_OFF_X; }
-        public float hitboxY() { return playerY + HITBOX_OFF_Y; }
-        public float hitboxW() { return HITBOX_W; }
-        public float hitboxH() { return HITBOX_H; }
-        public void move(float dx, float dy) { playerX += dx; playerY += dy; }
-    };
+    private PlayerCharacter player; // position, facing, tool, walk animation; also the collision Body
     private final int[] inventoryItems, inventoryAmounts;
     private int selectedSlot;
     private final Inventory inventory; // the live save object; its arrays are inventoryItems/inventoryAmounts
@@ -114,14 +100,6 @@ public class PlayState extends GameState {
     // owns the live animation/effect state; the array is filled by buildToolAction during construction.
     private final ToolAction[] toolActions = new ToolAction[playerAnimationArrays.length];
     private ToolActionSystem toolActionSystem;
-
-    private float playerX, playerY;
-    private int[] walkActions;
-    private int toolIndex = 0;   // index into playerAnimationArrays (current tool)
-    private int facing = 2;      // 0 up, 1 left, 2 down, 3 right
-    private int currentAnimation; // the player animation row being shown (a WALK_* id into playerFrames)
-    private int frameIndex = 0;
-    private float animTimer = 0;
 
     public PlayState(GameStateManager stateManager) {
         super(stateManager);
@@ -152,7 +130,8 @@ public class PlayState extends GameState {
             collisionRegions[k + 36] = yw[k];
         }
 
-        playerFrames = new TextureRegion[36][9];
+        // Player walk sheet: 36 animation rows × 9 frames of 64px. Handed to PlayerCharacter below.
+        TextureRegion[][] playerFrames = new TextureRegion[36][9];
         float tw = playerTexture.getWidth(), th = playerTexture.getHeight();
         float pad = 0.5f;
         for (int row = 0; row < 36; row++) {
@@ -236,15 +215,8 @@ public class PlayState extends GameState {
         inv.moveSelection(sSelectedSlot - inv.getSelectedSlot());
         inventory = inv;
         selectedSlot = inv.getSelectedSlot();
-        playerX = px;
-        playerY = py;
-        walkActions = (selected != null && selected.length == 4) ? selected : new int[]{32, 33, 34, 35};
-        currentAnimation = (animation >= 0 && animation < 36) ? animation : 34;
-        // Recover the tool index and facing from the saved state.
-        for (int i = 0; i < playerAnimationArrays.length; i++) {
-            if (Arrays.equals(playerAnimationArrays[i], walkActions)) { toolIndex = i; break; }
-        }
-        for (int i = 0; i < 4; i++) if (walkActions[i] == currentAnimation) { facing = i; break; }
+        // Player avatar: position + walk sheet, recovering tool/facing from the saved animation state.
+        player = new PlayerCharacter(px, py, animation, selected, playerFrames);
 
         // Crop subsystem: catalog from crops.png, an empty field sized to the world, and a 1x1
         // white pixel for the hover highlight (kept on the main SpriteBatch — no ShapeRenderer).
@@ -307,10 +279,10 @@ public class PlayState extends GameState {
      */
     private void saveGame() {
         WorldSave ws = new WorldSave();
-        ws.playerX = playerX;
-        ws.playerY = playerY;
-        ws.currentAnimation = currentAnimation;
-        ws.walkActions = walkActions;
+        ws.playerX = player.x();
+        ws.playerY = player.y();
+        ws.currentAnimation = player.currentAnimation();
+        ws.walkActions = player.walkActions();
         ws.invItems = inventoryItems;       // shared live refs — already current
         ws.invAmounts = inventoryAmounts;
         ws.invToggle = selectedSlot;
@@ -347,27 +319,28 @@ public class PlayState extends GameState {
         if (blueprint.frameOrder != null) frames = TextureSlicer.reorder(frames, blueprint.frameOrder);
         int frameCount = (blueprint.frameOrder != null) ? blueprint.frameOrder.length : blueprint.rawFrameCount;
         // Oversized swings draw at 2x, centered on the normal footprint; standard actions draw 1:1.
-        float drawSize = blueprint.oversized ? PLAYER_SIZE * 2f : PLAYER_SIZE;
-        float off = -(drawSize - PLAYER_SIZE) / 2f;
+        float drawSize = blueprint.oversized ? PlayerCharacter.SIZE * 2f : PlayerCharacter.SIZE;
+        float off = -(drawSize - PlayerCharacter.SIZE) / 2f;
         toolActions[blueprint.toolIndex] =
                 new ToolAction(frames, frameCount, blueprint.effectFrame, blueprint.effect, drawSize, off, off);
     }
 
-    /** Would the player's feet hitbox collide if its top-left were at (px,py)? Maps to the world resolver. */
-    private boolean collidesAt(float px, float py) {
-        return collisionResolver.collidesAt(px + HITBOX_OFF_X, py + HITBOX_OFF_Y, HITBOX_W, HITBOX_H);
+    /** Would the player's feet hitbox collide if shifted by (dx,dy) from where it is now? */
+    private boolean wouldCollide(float dx, float dy) {
+        return collisionResolver.collidesAt(player.hitboxX() + dx, player.hitboxY() + dy,
+                                            player.hitboxW(), player.hitboxH());
     }
 
     /** Would a crop planted in cell (col,row) immediately overlap the player where they stand now? */
     private boolean playerOverlapsCropCell(int col, int row) {
         return CollisionResolver.overlaps(
-                playerX + HITBOX_OFF_X, playerY + HITBOX_OFF_Y, HITBOX_W, HITBOX_H,
+                player.hitboxX(), player.hitboxY(), player.hitboxW(), player.hitboxH(),
                 cropGeometry.footprintX(col), cropGeometry.footprintY(row),
                 cropGeometry.footprintWidth, cropGeometry.footprintHeight);
     }
 
     private void drawCollision(SpriteBatch batch, boolean inFront) {
-        float feetY = playerY + HITBOX_OFF_Y;
+        float feetY = player.feetY();
         for (int j = 0; j < collisionLayer.cols(); j++) {
             for (int i = 0; i < collisionLayer.rows(); i++) {
                 int v = collisionLayer.get(j, i);
@@ -410,61 +383,39 @@ public class PlayState extends GameState {
         int ix = (right ? 1 : 0) - (left ? 1 : 0);
         int iy = (down ? 1 : 0) - (up ? 1 : 0); // Y-down
         if (ix != 0 && iy != 0) {
-            boolean xBlocked = collidesAt(playerX + ix * d, playerY);
-            boolean yBlocked = collidesAt(playerX, playerY + iy * d);
+            boolean xBlocked = wouldCollide(ix * d, 0);
+            boolean yBlocked = wouldCollide(0, iy * d);
             if (xBlocked ^ yBlocked) {
-                if (xBlocked) playerY += iy * d;
-                else playerX += ix * d;
+                if (xBlocked) player.move(0, iy * d);
+                else player.move(ix * d, 0);
             } else {
                 float inv = 0.70710678f;
-                playerX += ix * d * inv;
-                playerY += iy * d * inv;
+                player.move(ix * d * inv, iy * d * inv);
             }
         } else {
-            playerX += ix * d;
-            playerY += iy * d;
+            player.move(ix * d, iy * d);
         }
 
-        collisionResolver.resolve(playerBody);
+        collisionResolver.resolve(player);
 
         // Inventory selector (1/3) and tool cycling (2) — discrete presses.
         if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_1)) selectedSlot = Math.max(0, selectedSlot - 1);
         if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_3)) selectedSlot = Math.min(9, selectedSlot + 1);
-        if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_2)) {
-            toolIndex = (toolIndex + 1) % playerAnimationArrays.length;
-            walkActions = playerAnimationArrays[toolIndex];
-        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_2)) player.cycleTool();
 
-        // Facing follows ACTUAL movement, so opposing keys (which cancel an axis) keep the
-        // current facing instead of flipping. Horizontal wins over vertical on diagonals.
-        if (iy < 0) facing = 0; // up
-        if (iy > 0) facing = 2; // down
-        if (ix < 0) facing = 1; // left
-        if (ix > 0) facing = 3; // right
-        currentAnimation = walkActions[facing];
+        // Facing follows ACTUAL movement: opposing keys keep the current facing; horizontal wins diagonals.
+        player.setFacingFromMotion(ix, iy);
 
         // Q: trigger the current tool's Q-action animation (and its world effect, if any).
         if (Gdx.input.isKeyJustPressed(Input.Keys.Q)) {
-            toolActionSystem.trigger(toolIndex, facing);
+            toolActionSystem.trigger(player.toolIndex(), player.facing());
             if (toolActionSystem.isActive()) {
                 updateCamera();
                 return;
             }
         }
 
-        boolean moving = ix != 0 || iy != 0;
-        if (moving) {
-            if (frameIndex == 0) frameIndex = 1;
-            animTimer += delta;
-            if (animTimer >= ANIM_FRAME_TIME) {
-                animTimer -= ANIM_FRAME_TIME;
-                frameIndex++;
-                if (frameIndex >= WALK_FRAMES) frameIndex = 1;
-            }
-        } else {
-            frameIndex = 0;
-            animTimer = 0;
-        }
+        player.stepWalk(delta, ix != 0 || iy != 0);
 
         updateHover();
         // Left-click a plantable tile to sow the selected seed; E harvests a mature crop under the mouse.
@@ -514,7 +465,7 @@ public class PlayState extends GameState {
     }
 
     private void updateCamera() {
-        gameCamera.follow(playerX + PLAYER_SIZE / 2f, playerY + PLAYER_SIZE / 2f);
+        gameCamera.follow(player.centerX(), player.centerY());
     }
 
     /** Apply a tool action's world effect at its effect frame. Only tilling has one today; new
@@ -526,8 +477,8 @@ public class PlayState extends GameState {
     /** Till the cell one step in front of the player, which the dual grid renders as a clean 4-tile
      *  square. "In front" = the player's standing (hitbox) cell, offset one tile in the facing direction. */
     private void performTill(int dir) {
-        int col = soil.grid().colAtWorldX(playerX + HITBOX_OFF_X + HITBOX_W / 2f);
-        int row = soil.grid().rowAtWorldY(playerY + HITBOX_OFF_Y + HITBOX_H / 2f);
+        int col = soil.grid().colAtWorldX(player.hitboxCenterX());
+        int row = soil.grid().rowAtWorldY(player.hitboxCenterY());
         switch (dir) { // 0 up, 1 left, 2 down, 3 right (Y-down: up = -row)
             case 0 -> row -= 1;
             case 1 -> col -= 1;
@@ -542,9 +493,9 @@ public class PlayState extends GameState {
         ToolAction action = toolActionSystem.current();
         if (action != null) {
             TextureRegion frame = action.frames[toolActionSystem.currentDir()][toolActionSystem.currentFrame()];
-            batch.draw(frame, playerX + action.offX, playerY + action.offY, action.drawSize, action.drawSize);
+            batch.draw(frame, player.x() + action.offX, player.y() + action.offY, action.drawSize, action.drawSize);
         } else {
-            batch.draw(playerFrames[currentAnimation][frameIndex], playerX, playerY, PLAYER_SIZE, PLAYER_SIZE);
+            batch.draw(player.currentFrame(), player.x(), player.y(), PlayerCharacter.SIZE, PlayerCharacter.SIZE);
         }
     }
 
@@ -583,7 +534,7 @@ public class PlayState extends GameState {
     /** Draw planted crops at their current growth stage, depth-split around the player like the bushes. */
     private void drawCrops(SpriteBatch batch, boolean inFront) {
         long now = System.currentTimeMillis();
-        float feetY = playerY + HITBOX_OFF_Y;
+        float feetY = player.feetY();
         for (int j = 0; j < cropField.cols(); j++) {
             for (int i = 0; i < cropField.rows(); i++) {
                 PlantedCrop crop = cropField.at(j, i);
