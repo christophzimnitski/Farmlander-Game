@@ -32,12 +32,12 @@ public final class CropRegistry {
         types = new CropType[size];
 
         float tw = sheet.getWidth(), th = sheet.getHeight(), pad = 0.5f;
-        int lastColumn = (int) (tw / TILE_W) - 1;
+        int sheetColumns = (int) (tw / TILE_W);
         for (CropBlueprint blueprint : blueprints) {
             // A couple of vestigial crops (Maize, Green Beans) live in column 32, past the 32-wide
             // sheet; clamp so slicing stays in bounds instead of sampling garbage. They have no real
             // field art anyway — they exist only as inventory items.
-            int column = Math.min(blueprint.spriteColumn, lastColumn);
+            int column = clampColumn(blueprint.spriteColumn, sheetColumns);
             TextureRegion[] stages = new TextureRegion[STAGES];
             for (int s = 0; s < STAGES; s++) {
                 int sx = column * TILE_W, sy = (blueprint.spriteTopRow + s) * TILE_H;
@@ -53,6 +53,15 @@ public final class CropRegistry {
                     ? new CropType(blueprint.index, blueprint.name, stages, durations)
                     : new CropType(blueprint.index, blueprint.name, stages, defaultStageMillis);
         }
+    }
+
+    /**
+     * Clamp a blueprint's sprite column into the sheet. The built-in catalog places two vestigial crops
+     * (Maize, Green Beans) in column 32 of a 32-column sheet (0..31); clamping them to the last real
+     * column keeps slicing in bounds instead of sampling past the texture. GL-free so it's unit-testable.
+     */
+    static int clampColumn(int spriteColumn, int sheetTileColumns) {
+        return Math.min(spriteColumn, sheetTileColumns - 1);
     }
 
     public int count() {
