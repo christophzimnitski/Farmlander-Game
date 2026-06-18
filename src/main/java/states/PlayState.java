@@ -23,6 +23,8 @@ import items.ItemRegistry;
 import items.data.DefaultItemDataSource;
 import items.data.ItemDataSource;
 import items.data.JsonItemDataSource;
+import physics.Body;
+import physics.CollisionResolver;
 import render.GameCamera;
 import render.TextureSlicer;
 import save.CropSave;
@@ -61,9 +63,8 @@ public class PlayState extends GameState {
 
     private static final float HITBOX_OFF_X = 75f, HITBOX_OFF_Y = 195f;
     private static final float HITBOX_W = 90f, HITBOX_H = 48f;
-    private static final float COLLISION_ERR = 0.45f;
-    private static final int[] NON_COLLIDABLE = {7, 8, 9, 25, 26, 27, 43, 44, 45};
-    // Bush depth line. Tracks the collision box, which was raised by TILE/8 (see collidesAt/resolveBox),
+    private static final float COLLISION_ERR = 0.45f; // passed to CollisionResolver (push past the edge)
+    // Bush depth line. Tracks the collision box, which was raised by TILE/8 (see CollisionResolver),
     // so the player's resting position stays on the "draw in front" side and bushes don't paint over him.
     private static final float DEPTH_OFFSET = 82.5f; // 94.5 - TILE/8
     private static final long DEFAULT_STAGE_MILLIS = 3000L; // 5 stages -> ~12s to mature (tunable per crop)
@@ -89,6 +90,15 @@ public class PlayState extends GameState {
     // the `tilled` flags on `soil`; the visuals are derived on a half-tile-offset grid at render time.
     private final TileLayer grassLayer, collisionLayer;
     private final DualGridSoil soil;
+    private final CollisionResolver collisionResolver;
+    // Adapts the player to the collision Body interface: hitbox = player position + the fixed feet offset.
+    private final Body playerBody = new Body() {
+        public float hitboxX() { return playerX + HITBOX_OFF_X; }
+        public float hitboxY() { return playerY + HITBOX_OFF_Y; }
+        public float hitboxW() { return HITBOX_W; }
+        public float hitboxH() { return HITBOX_H; }
+        public void move(float dx, float dy) { playerX += dx; playerY += dy; }
+    };
     private final int[] inventoryItems, inventoryAmounts;
     private int selectedSlot;
     private final Inventory inventory; // the live save object; its arrays are inventoryItems/inventoryAmounts
@@ -293,6 +303,7 @@ public class PlayState extends GameState {
         for (int i = 0; i < cropTypes.length; i++) cropTypes[i] = cropRegistry.get(i);
         itemRegistry = new ItemRegistry(itemData.loadItemBlueprints(), cropTypes);
         cropField = new CropField(collisionLayer.cols(), collisionLayer.rows());
+        collisionResolver = new CollisionResolver(collisionLayer, cropField, cropGeometry, TILE, COLLISION_ERR);
         if (sCrops != null) restoreCrops(sCrops);
         Pixmap pm = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
         pm.setColor(Color.WHITE);
@@ -385,75 +396,17 @@ public class PlayState extends GameState {
         return region;
     }
 
-    private static boolean isNonCollidable(int v) {
-        for (int n : NON_COLLIDABLE) if (n == v) return true;
-        return false;
-    }
-
+    /** Would the player's feet hitbox collide if its top-left were at (px,py)? Maps to the world resolver. */
     private boolean collidesAt(float px, float py) {
-        float hx = px + HITBOX_OFF_X, hy = py + HITBOX_OFF_Y;
-        for (int j = 0; j < collisionLayer.cols(); j++) {
-            for (int i = 0; i < collisionLayer.rows(); i++) {
-                int v = collisionLayer.get(j, i);
-                if (v < 1 || isNonCollidable(v)) continue;
-                if (hitboxOverlaps(hx, hy, j * TILE, i * TILE - TILE / 8f, TILE, TILE)) return true;
-            }
-        }
-        // Planted crops (not yet harvested) are solid too.
-        for (int j = 0; j < cropField.cols(); j++) {
-            for (int i = 0; i < cropField.rows(); i++) {
-                PlantedCrop crop = cropField.at(j, i);
-                if (crop == null || crop.harvested) continue;
-                if (hitboxOverlaps(hx, hy, cropGeometry.footprintX(j), cropGeometry.footprintY(i),
-                                   cropGeometry.footprintWidth, cropGeometry.footprintHeight)) return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean hitboxOverlaps(float hx, float hy, float bx, float by, float bw, float bh) {
-        return hx < bx + bw && hx + HITBOX_W > bx && hy < by + bh && hy + HITBOX_H > by;
+        return collisionResolver.collidesAt(px + HITBOX_OFF_X, py + HITBOX_OFF_Y, HITBOX_W, HITBOX_H);
     }
 
     /** Would a crop planted in cell (col,row) immediately overlap the player where they stand now? */
     private boolean playerOverlapsCropCell(int col, int row) {
-        return hitboxOverlaps(playerX + HITBOX_OFF_X, playerY + HITBOX_OFF_Y,
-                              cropGeometry.footprintX(col), cropGeometry.footprintY(row),
-                              cropGeometry.footprintWidth, cropGeometry.footprintHeight);
-    }
-
-    private void resolveCollisions() {
-        for (int j = 0; j < collisionLayer.cols(); j++) {
-            for (int i = 0; i < collisionLayer.rows(); i++) {
-                int v = collisionLayer.get(j, i);
-                if (v < 1 || isNonCollidable(v)) continue;
-                resolveBox(j * TILE, i * TILE - TILE / 8f, TILE, TILE);
-            }
-        }
-        for (int j = 0; j < cropField.cols(); j++) {
-            for (int i = 0; i < cropField.rows(); i++) {
-                PlantedCrop crop = cropField.at(j, i);
-                if (crop == null || crop.harvested) continue;
-                resolveBox(cropGeometry.footprintX(j), cropGeometry.footprintY(i),
-                           cropGeometry.footprintWidth, cropGeometry.footprintHeight);
-            }
-        }
-    }
-
-    /** Push the player out of a solid box (bx,by,bw,bh) along the smaller overlap axis. */
-    private void resolveBox(float bx, float by, float bw, float bh) {
-        float hx = playerX + HITBOX_OFF_X, hy = playerY + HITBOX_OFF_Y;
-        float ix = Math.max(hx, bx), iy = Math.max(hy, by);
-        float ix2 = Math.min(hx + HITBOX_W, bx + bw), iy2 = Math.min(hy + HITBOX_H, by + bh);
-        if (ix >= ix2 || iy >= iy2) return;
-        float overlapW = ix2 - ix, overlapH = iy2 - iy;
-        float pushH = overlapH + COLLISION_ERR, pushW = overlapW + COLLISION_ERR;
-        if (overlapW > pushH) {
-            if (iy > hy) playerY -= pushH; else playerY += pushH;
-        }
-        if (overlapH > pushW) {
-            if (ix > hx) playerX -= pushW; else playerX += pushW;
-        }
+        return CollisionResolver.overlaps(
+                playerX + HITBOX_OFF_X, playerY + HITBOX_OFF_Y, HITBOX_W, HITBOX_H,
+                cropGeometry.footprintX(col), cropGeometry.footprintY(row),
+                cropGeometry.footprintWidth, cropGeometry.footprintHeight);
     }
 
     private void drawCollision(SpriteBatch batch, boolean inFront) {
@@ -559,7 +512,7 @@ public class PlayState extends GameState {
             playerY += iy * d;
         }
 
-        resolveCollisions();
+        collisionResolver.resolve(playerBody);
 
         // Inventory selector (1/3) and tool cycling (2) — discrete presses.
         if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_1)) selectedSlot = Math.max(0, selectedSlot - 1);
@@ -670,14 +623,8 @@ public class PlayState extends GameState {
             case 2 -> row += 1;
             case 3 -> col += 1;
         }
-        if (!soil.grid().inBounds(col, row) || isBlockedByCollidable(col, row)) return;
+        if (!soil.grid().inBounds(col, row) || collisionResolver.isSolid(col, row)) return;
         soil.till(col, row);
-    }
-
-    /** True when a collidable (e.g. a bush) occupies the cell, so it can't be tilled. */
-    private boolean isBlockedByCollidable(int col, int row) {
-        int v = collisionLayer.get(col, row);
-        return v >= 1 && !isNonCollidable(v);
     }
 
     private void drawPlayer(SpriteBatch batch) {
