@@ -1,13 +1,13 @@
 package world;
 
 /**
- * A bounded grid of {@code int} tile values stored sparsely as fixed-size chunks. Presents exactly the
- * surface {@link TileLayer} did — {@code get/set/cols/rows/tileSize} plus the zoom-decoupled world↔grid
+ * A bounded grid of {@code int} tile values stored sparsely as fixed-size chunks. Presents a plain grid
+ * surface — {@code get/set/cols/rows/tileSize} plus the zoom-decoupled world↔grid
  * helpers — so it is a <b>drop-in</b> for callers (the renderer's and collision's cell windows clamp to
  * {@code cols()/rows()} unchanged). The chunking is an internal storage detail: each {@value #CHUNK_SIZE}×
  * {@value #CHUNK_SIZE} block is allocated lazily on its first non-zero write, so a mostly-empty layer
- * (collision, tilled soil) costs only the chunks that hold something, and the save can write just those
- * (see {@link #forEachChunk}).
+ * (collision, tilled soil) costs only the chunks that hold something. The save mirrors this on disk by
+ * persisting just the non-empty blocks (see {@code BinarySaveFormat}).
  *
  * <p>The world is intentionally <b>finite</b> (Stardew-style, not an infinite Minecraft world): cells
  * outside {@code [0,cols) × [0,rows)} read as {@code 0} and ignore writes, exactly like the old array.
@@ -16,12 +16,6 @@ package world;
 public final class ChunkedTileLayer {
     /** Cells per side of a chunk. 32 → a 400×220 world is 13×7 = 91 chunks. */
     public static final int CHUNK_SIZE = 32;
-
-    /** Visitor over the non-empty chunks, for per-chunk save. */
-    @FunctionalInterface
-    public interface ChunkVisitor {
-        void visit(int chunkCol, int chunkRow, int[] blob);
-    }
 
     private final int cols, rows;     // world bounds in cells
     private final float tileSize;
@@ -93,28 +87,6 @@ public final class ChunkedTileLayer {
     public float worldXOfCol(int col) { return col * tileSize; }
 
     public float worldYOfRow(int row) { return row * tileSize; }
-
-    // --- chunk access (used by the save format to persist only non-empty chunks) ---
-
-    public int chunkCols() { return chunkCols; }
-
-    public int chunkRows() { return chunkRows; }
-
-    /** Visit every allocated (non-empty) chunk with its chunk-grid coords and raw blob. */
-    public void forEachChunk(ChunkVisitor visitor) {
-        for (int i = 0; i < chunks.length; i++) {
-            if (chunks[i] == null) continue;
-            visitor.visit(i % chunkCols, i / chunkCols, chunks[i]);
-        }
-    }
-
-    /** Inject a chunk blob (loading a per-chunk save). The blob is taken as-is; length must be CHUNK_SIZE². */
-    public void setChunk(int chunkCol, int chunkRow, int[] blob) {
-        if (chunkCol < 0 || chunkCol >= chunkCols || chunkRow < 0 || chunkRow >= chunkRows) return;
-        if (blob == null || blob.length != CHUNK_SIZE * CHUNK_SIZE)
-            throw new IllegalArgumentException("chunk blob must be " + (CHUNK_SIZE * CHUNK_SIZE) + " ints");
-        chunks[chunkRow * chunkCols + chunkCol] = blob;
-    }
 
     private int chunkIndex(int col, int row) {
         return (row / CHUNK_SIZE) * chunkCols + (col / CHUNK_SIZE);

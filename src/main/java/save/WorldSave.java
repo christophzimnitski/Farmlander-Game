@@ -25,10 +25,14 @@ public final class WorldSave {
     public int[] invAmounts;
     public int invToggle;
 
-    // Tile layers (rectangular grids, [outer][inner]).
+    // Tile layers (rectangular grids, [outer][inner]). Held dense here; the binary format persists them
+    // per-chunk on disk (skipping all-zero 32×32 blocks), so this stays decoupled from the wire encoding.
     public int[][] collision;
     public int[][] planting;
     public int[][] grass;
+
+    // The seed that generated this bounded world's grass — stored so the world has a stable identity.
+    public long worldSeed;
 
     // Crops.
     public CropSave[] crops;

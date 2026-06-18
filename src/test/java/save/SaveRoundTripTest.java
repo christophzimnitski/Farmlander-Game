@@ -35,6 +35,7 @@ class SaveRoundTripTest {
         in.invItems = new int[]{100, 101, 0, 0};
         in.invAmounts = new int[]{5, 12, 0, 0};
         in.invToggle = 2;
+        in.worldSeed = 0x0BADC0DE_CAFEF00DL;
         in.collision = new int[][]{{0, 1}, {2, 0}};
         in.planting = new int[][]{{0, 1}, {1, 0}};   // tilled flags
         in.grass = new int[][]{{0, 3}, {2, 1}};
@@ -52,6 +53,7 @@ class SaveRoundTripTest {
         assertArrayEquals(in.invItems, out.invItems);
         assertArrayEquals(in.invAmounts, out.invAmounts);
         assertEquals(in.invToggle, out.invToggle);
+        assertEquals(in.worldSeed, out.worldSeed);
         assertArrayEquals(in.collision, out.collision);
         assertArrayEquals(in.planting, out.planting);
         assertArrayEquals(in.grass, out.grass);
@@ -64,6 +66,31 @@ class SaveRoundTripTest {
         assertEquals(false, out.crops[0].harvested);
         assertEquals(12, out.crops[1].type);
         assertEquals(true, out.crops[1].harvested);
+    }
+
+    @Test
+    void largeSparseGridSurvivesPerChunkEncoding() throws IOException {
+        // A world-sized grid that is empty except for a few cells in distant chunks: the per-chunk encoding
+        // must skip the all-zero chunks yet reproduce the populated cells exactly across chunk boundaries.
+        int[][] grid = new int[400][220];
+        grid[0][0] = 1;
+        grid[33][35] = 2;     // a different chunk than (0,0)
+        grid[399][219] = 3;   // the far corner chunk
+        WorldSave in = new WorldSave();
+        in.walkActions = new int[]{32, 33, 34, 35};
+        in.collision = grid;
+        in.planting = new int[400][220]; // wholly empty -> zero chunks written
+        in.grass = grid;
+        in.crops = null;
+
+        WorldSave out = roundTrip(in);
+
+        assertArrayEquals(in.collision, out.collision);
+        assertArrayEquals(in.planting, out.planting);
+        assertArrayEquals(in.grass, out.grass);
+        assertEquals(1, out.collision[0][0]);
+        assertEquals(2, out.collision[33][35]);
+        assertEquals(3, out.collision[399][219]);
     }
 
     @Test

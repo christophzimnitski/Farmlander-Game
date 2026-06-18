@@ -27,10 +27,11 @@ public final class WorldPersistence {
     private final PlayerCharacter player;
     private final int[] inventoryItems, inventoryAmounts; // shared live refs — already current at save time
     private final CropRegistry cropRegistry;
+    private final long worldSeed; // the seed that generated this world's grass — persisted for a stable identity
 
     public WorldPersistence(ChunkedTileLayer collision, ChunkedTileLayer grass, DualGridSoil soil, CropField cropField,
                             PlayerCharacter player, int[] inventoryItems, int[] inventoryAmounts,
-                            CropRegistry cropRegistry) {
+                            CropRegistry cropRegistry, long worldSeed) {
         this.collision = collision;
         this.grass = grass;
         this.soil = soil;
@@ -39,6 +40,7 @@ public final class WorldPersistence {
         this.inventoryItems = inventoryItems;
         this.inventoryAmounts = inventoryAmounts;
         this.cropRegistry = cropRegistry;
+        this.worldSeed = worldSeed;
     }
 
     /** Replay saved crops into the field, dropping any crop id that no longer exists in the catalog. */
@@ -69,6 +71,7 @@ public final class WorldPersistence {
         ws.collision = collision.toDense();
         ws.planting = soil.grid().toDense(); // tilled flags (0/1)
         ws.grass = grass.toDense();
+        ws.worldSeed = worldSeed;
 
         // Snapshot the crop grid as plain CropSave records (no PlantedCrop/CropType, which hold textures).
         List<CropSave> crops = new ArrayList<>();

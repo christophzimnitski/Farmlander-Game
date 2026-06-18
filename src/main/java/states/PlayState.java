@@ -80,6 +80,7 @@ public class PlayState extends GameState {
     // World grid (single source of truth for all per-cell state). Soil is a dual grid: gameplay reads
     // the `tilled` flags on `soil`; the visuals are derived on a half-tile-offset grid at render time.
     private final ChunkedTileLayer grassLayer, collisionLayer;
+    private final long worldSeed; // seed that generated this bounded world's grass (persisted in the save)
     private final DualGridSoil soil;
     private final CollisionResolver collisionResolver;
     private PlayerCharacter player; // position, facing, tool, walk animation; also the collision Body
@@ -190,12 +191,14 @@ public class PlayState extends GameState {
             selected = new int[]{32, 33, 34, 35};
             sCrops = null;
         }
+        // The world's seed: keep the saved one, or mint a fresh seed for a new world (or a pre-seed save).
+        worldSeed = (ws != null && ws.worldSeed != 0) ? ws.worldSeed : System.nanoTime();
         // All layers live on one bounded grid (WORLD_COLS x WORLD_ROWS). Saved grids are placed into it —
         // an old 40x22 save lands in the corner; a current full-size save fills it. The tilled layer is
         // normalized to 0/1 (any legacy autotile index becomes "tilled?"); the dual grid derives the tiles.
         collisionLayer = placeIntoWorld(sCollision, false);
         grassLayer = (sGrass != null) ? placeIntoWorld(sGrass, false)
-                                      : GrassGenerator.randomGrass(WORLD_COLS, WORLD_ROWS, TILE, System.nanoTime());
+                                      : GrassGenerator.randomGrass(WORLD_COLS, WORLD_ROWS, TILE, worldSeed);
         soil = new DualGridSoil(placeIntoWorld(sPlanting, true));
         // Rebuild the live Inventory from saved primitives (it's no longer serialized directly).
         Inventory inv = new Inventory(sInvItems != null ? sInvItems.length : 10);
@@ -233,7 +236,7 @@ public class PlayState extends GameState {
         cropField = new CropField(collisionLayer.cols(), collisionLayer.rows());
         collisionResolver = new CollisionResolver(collisionLayer, cropField, cropGeometry, TILE, COLLISION_ERR);
         worldPersistence = new WorldPersistence(collisionLayer, grassLayer, soil, cropField, player,
-                inventoryItems, inventoryAmounts, cropRegistry);
+                inventoryItems, inventoryAmounts, cropRegistry, worldSeed);
         worldPersistence.restoreCrops(sCrops);
         worldRenderer = new WorldRenderer(grassLayer, soil, collisionLayer, cropField, cropGeometry, TILE,
                 grassRegions, soilRegions, collisionRegions);
