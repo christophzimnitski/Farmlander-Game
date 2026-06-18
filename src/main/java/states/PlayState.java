@@ -18,6 +18,7 @@ import crops.data.DefaultCropDataSource;
 import crops.data.JsonCropDataSource;
 import entities.Inventory;
 import entities.PlayerCharacter;
+import farm.FarmInteraction;
 import items.ItemRegistry;
 import items.data.DefaultItemDataSource;
 import items.data.ItemDataSource;
@@ -78,17 +79,15 @@ public class PlayState extends GameState {
     private final DualGridSoil soil;
     private final CollisionResolver collisionResolver;
     private PlayerCharacter player; // position, facing, tool, walk animation; also the collision Body
-    private final int[] inventoryItems, inventoryAmounts;
+    private final int[] inventoryItems, inventoryAmounts; // live refs into the Inventory built at load
     private int selectedSlot;
-    private final Inventory inventory; // the live save object; its arrays are inventoryItems/inventoryAmounts
 
     // Crop subsystem.
     private final Texture cropsTexture;
     private final CropRegistry cropRegistry;
     private final ItemRegistry itemRegistry;
     private final CropField cropField;
-    private int hoverCol = -1, hoverRow = -1; // tile under the mouse this frame
-    private boolean hoverPlantable = false;   // hovered tile is tilled soil and empty
+    private FarmInteraction farmInteraction; // hover targeting + plant/harvest/till
 
     // Data-driven tool Q-actions, indexed by toolIndex (null = no action for that tool). ToolActionSystem
     // owns the live animation/effect state; the array is filled by buildToolAction during construction.
@@ -208,7 +207,6 @@ public class PlayState extends GameState {
             }
         }
         inv.moveSelection(sSelectedSlot - inv.getSelectedSlot());
-        inventory = inv;
         selectedSlot = inv.getSelectedSlot();
         // Player avatar: position + walk sheet, recovering tool/facing from the saved animation state.
         player = new PlayerCharacter(px, py, animation, selected, playerFrames);
@@ -248,6 +246,8 @@ public class PlayState extends GameState {
         if (sCrops != null) restoreCrops(sCrops);
         worldRenderer = new WorldRenderer(grassLayer, soil, collisionLayer, cropField, cropGeometry, TILE,
                 grassRegions, soilRegions, collisionRegions);
+        farmInteraction = new FarmInteraction(soil, cropField, cropRegistry, itemRegistry, cropGeometry,
+                collisionResolver, gameCamera, player, inventoryItems, inventoryAmounts);
     }
 
     /** Repopulate the crop field from the crops read out of the save. */
@@ -321,14 +321,6 @@ public class PlayState extends GameState {
                                             player.hitboxW(), player.hitboxH());
     }
 
-    /** Would a crop planted in cell (col,row) immediately overlap the player where they stand now? */
-    private boolean playerOverlapsCropCell(int col, int row) {
-        return CollisionResolver.overlaps(
-                player.hitboxX(), player.hitboxY(), player.hitboxW(), player.hitboxH(),
-                cropGeometry.footprintX(col), cropGeometry.footprintY(row),
-                cropGeometry.footprintWidth, cropGeometry.footprintHeight);
-    }
-
     @Override
     public void update(float delta) {
         if (Gdx.input.isKeyPressed(Input.Keys.ESCAPE)) Gdx.app.exit();
@@ -383,51 +375,13 @@ public class PlayState extends GameState {
 
         player.stepWalk(delta, ix != 0 || iy != 0);
 
-        updateHover();
+        farmInteraction.updateHover();
         // Left-click a plantable tile to sow the selected seed; E harvests a mature crop under the mouse.
-        if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT) && hoverPlantable) plantAtHover();
-        if (Gdx.input.isKeyJustPressed(Input.Keys.E)) harvestAtHover();
+        if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT) && farmInteraction.hoverPlantable())
+            farmInteraction.plantAtHover(selectedSlot);
+        if (Gdx.input.isKeyJustPressed(Input.Keys.E)) farmInteraction.harvestAtHover();
 
         updateCamera();
-    }
-
-    /** Resolve the cell under the mouse. A cell is plantable when it's tilled soil, empty, and planting
-     *  there wouldn't immediately overlap the player. */
-    private void updateHover() {
-        var mouseWorld = gameCamera.unproject(Gdx.input.getX(), Gdx.input.getY());
-        hoverCol = soil.grid().colAtWorldX(mouseWorld.x);
-        hoverRow = soil.grid().rowAtWorldY(mouseWorld.y);
-        hoverPlantable = soil.isTilled(hoverCol, hoverRow) && cropField.isOpen(hoverCol, hoverRow)
-                     && !playerOverlapsCropCell(hoverCol, hoverRow);
-    }
-
-    /** Plant the selected seed (an inventory crop item) at the hovered tile, consuming one seed. */
-    private void plantAtHover() {
-        CropType seed = cropRegistry.get(itemRegistry.cropIndexFor(inventoryItems[selectedSlot]));
-        if (seed == null || inventoryAmounts[selectedSlot] <= 0) return; // no seed of the selected crop in hand
-        cropField.plant(hoverCol, hoverRow, seed, System.currentTimeMillis());
-        if (--inventoryAmounts[selectedSlot] <= 0) {
-            inventoryAmounts[selectedSlot] = 0;
-            inventoryItems[selectedSlot] = 0;
-        }
-    }
-
-    /** Harvest the hovered crop if it's mature: bank the produce and leave a hole that can be replanted. */
-    private void harvestAtHover() {
-        PlantedCrop crop = cropField.at(hoverCol, hoverRow);
-        if (crop == null || !crop.isMature(System.currentTimeMillis())) return;
-        addInventory(crop.type.itemId, 1);
-        crop.harvested = true; // now renders the hole frame; node is open for replanting
-    }
-
-    /** Add an item to the inventory: stack onto a matching slot, else fill the first empty slot. */
-    private void addInventory(int itemId, int amount) {
-        for (int i = 0; i < inventoryItems.length; i++) {
-            if (inventoryItems[i] == itemId) { inventoryAmounts[i] += amount; return; }
-        }
-        for (int i = 0; i < inventoryItems.length; i++) {
-            if (inventoryItems[i] == 0) { inventoryItems[i] = itemId; inventoryAmounts[i] = amount; return; }
-        }
     }
 
     private void updateCamera() {
@@ -437,28 +391,14 @@ public class PlayState extends GameState {
     /** Apply a tool action's world effect at its effect frame. Only tilling has one today; new
      *  effects (watering, digging, ...) slot in here keyed by the blueprint's {@code effect} string. */
     private void applyActionEffect(String effect, int dir) {
-        if ("till".equals(effect)) performTill(dir);
-    }
-
-    /** Till the cell one step in front of the player, which the dual grid renders as a clean 4-tile
-     *  square. "In front" = the player's standing (hitbox) cell, offset one tile in the facing direction. */
-    private void performTill(int dir) {
-        int col = soil.grid().colAtWorldX(player.hitboxCenterX());
-        int row = soil.grid().rowAtWorldY(player.hitboxCenterY());
-        switch (dir) { // 0 up, 1 left, 2 down, 3 right (Y-down: up = -row)
-            case 0 -> row -= 1;
-            case 1 -> col -= 1;
-            case 2 -> row += 1;
-            case 3 -> col += 1;
-        }
-        if (!soil.grid().inBounds(col, row) || collisionResolver.isSolid(col, row)) return;
-        soil.till(col, row);
+        if ("till".equals(effect)) farmInteraction.performTill(dir);
     }
 
     @Override
     public void render(SpriteBatch batch) {
         worldRenderer.render(batch, gameCamera.worldCombined(), player, toolActionSystem,
-                             hoverCol, hoverRow, hoverPlantable);
+                             farmInteraction.hoverCol(), farmInteraction.hoverRow(),
+                             farmInteraction.hoverPlantable());
         inventoryHud.render(batch, gameCamera.hudCombined(), inventoryItems, inventoryAmounts, selectedSlot);
     }
 
