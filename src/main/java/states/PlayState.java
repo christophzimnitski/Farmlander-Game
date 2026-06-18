@@ -58,6 +58,7 @@ public class PlayState extends GameState {
     private static final float MOVE_SPEED = 270f;
     private static final float ANIM_FRAME_TIME = 16f / 144f; // tool-action animation cadence
     private static final float COLLISION_ERR = 0.45f; // passed to CollisionResolver (push past the edge)
+    private static final float AUTOSAVE_INTERVAL = 120f; // seconds between autosaves
     private static final long DEFAULT_STAGE_MILLIS = 3000L; // 5 stages -> ~12s to mature (tunable per crop)
     // Crop sprite/footprint geometry on a cell lives in CropGeometry (shared by collision, planting, draw).
     private final CropGeometry cropGeometry = new CropGeometry(TILE);
@@ -88,6 +89,7 @@ public class PlayState extends GameState {
     private final CropField cropField;
     private FarmInteraction farmInteraction; // hover targeting + plant/harvest/till
     private WorldPersistence worldPersistence; // save snapshot + crop restore
+    private float autosaveTimer = 0; // counts up to AUTOSAVE_INTERVAL, then saves
 
     // Data-driven tool Q-actions, indexed by toolIndex (null = no action for that tool). ToolActionSystem
     // owns the live animation/effect state; the array is filled by buildToolAction during construction.
@@ -265,6 +267,7 @@ public class PlayState extends GameState {
     @Override
     public void update(float delta) {
         if (Gdx.input.isKeyPressed(Input.Keys.ESCAPE)) Gdx.app.exit();
+        autosave(delta); // periodic save so a crash/SIGKILL doesn't lose progress (exit-only save isn't enough)
 
         // A tool Q-action is playing out: animate it (firing its effect at the effect frame), no movement.
         if (toolActionSystem.isActive()) {
@@ -327,6 +330,19 @@ public class PlayState extends GameState {
 
     private void updateCamera() {
         gameCamera.follow(player.centerX(), player.centerY());
+    }
+
+    /** Save every {@link #AUTOSAVE_INTERVAL} seconds so a crash doesn't lose progress between clean exits. */
+    private void autosave(float delta) {
+        autosaveTimer += delta;
+        if (autosaveTimer < AUTOSAVE_INTERVAL) return;
+        autosaveTimer = 0;
+        try {
+            worldPersistence.save(selectedSlot);
+            Log.info("PlayState", "autosaved");
+        } catch (Exception e) {
+            Log.error("PlayState", "autosave failed", e);
+        }
     }
 
     /** Apply a tool action's world effect at its effect frame. Only tilling has one today; new
