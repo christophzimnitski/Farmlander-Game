@@ -1,7 +1,6 @@
 package states;
 
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
@@ -21,6 +20,8 @@ import data.ProbeLoader;
 import entities.Inventory;
 import entities.PlayerCharacter;
 import farm.FarmInteraction;
+import input.InputAction;
+import input.InputBindings;
 import items.ItemRegistry;
 import items.data.DefaultItemDataSource;
 import items.data.ItemDataSource;
@@ -63,6 +64,7 @@ public class PlayState extends GameState {
     private final CropGeometry cropGeometry = new CropGeometry(Config.TILE);
 
     private final GameCamera gameCamera; // world camera (follows the player) + screen-space HUD camera
+    private final InputBindings input = new InputBindings(); // semantic action -> key layer (reboundable)
 
     private final Texture grassTexture, plowedTexture, tallGrassTexture, wheatTexture, youngWheatTexture,
             playerTexture, chopTexture;
@@ -286,7 +288,7 @@ public class PlayState extends GameState {
 
     @Override
     public void update(float delta) {
-        if (Gdx.input.isKeyPressed(Input.Keys.ESCAPE)) Gdx.app.exit();
+        if (input.isDown(InputAction.QUIT)) Gdx.app.exit();
         autosave(delta); // periodic save so a crash/SIGKILL doesn't lose progress (exit-only save isn't enough)
 
         // A tool Q-action is playing out: animate it (firing its effect at the effect frame), no movement.
@@ -296,10 +298,10 @@ public class PlayState extends GameState {
             return;
         }
 
-        boolean up    = Gdx.input.isKeyPressed(Input.Keys.UP)    || Gdx.input.isKeyPressed(Input.Keys.W);
-        boolean down  = Gdx.input.isKeyPressed(Input.Keys.DOWN)  || Gdx.input.isKeyPressed(Input.Keys.S);
-        boolean left  = Gdx.input.isKeyPressed(Input.Keys.LEFT)  || Gdx.input.isKeyPressed(Input.Keys.A);
-        boolean right = Gdx.input.isKeyPressed(Input.Keys.RIGHT) || Gdx.input.isKeyPressed(Input.Keys.D);
+        boolean up    = input.isDown(InputAction.MOVE_UP);
+        boolean down  = input.isDown(InputAction.MOVE_DOWN);
+        boolean left  = input.isDown(InputAction.MOVE_LEFT);
+        boolean right = input.isDown(InputAction.MOVE_RIGHT);
 
         float d = Config.MOVE_SPEED * delta;
         int ix = (right ? 1 : 0) - (left ? 1 : 0);
@@ -321,15 +323,15 @@ public class PlayState extends GameState {
         collisionResolver.resolve(player);
 
         // Inventory selector (1/3) and tool cycling (2) — discrete presses.
-        if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_1)) selectedSlot = Math.max(0, selectedSlot - 1);
-        if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_3)) selectedSlot = Math.min(9, selectedSlot + 1);
-        if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_2)) player.cycleTool();
+        if (input.isJustPressed(InputAction.SELECT_PREV)) selectedSlot = Math.max(0, selectedSlot - 1);
+        if (input.isJustPressed(InputAction.SELECT_NEXT)) selectedSlot = Math.min(9, selectedSlot + 1);
+        if (input.isJustPressed(InputAction.CYCLE_TOOL)) player.cycleTool();
 
         // Facing follows ACTUAL movement: opposing keys keep the current facing; horizontal wins diagonals.
         player.setFacingFromMotion(ix, iy);
 
-        // Q: trigger the current tool's Q-action animation (and its world effect, if any).
-        if (Gdx.input.isKeyJustPressed(Input.Keys.Q)) {
+        // USE_TOOL (Q): trigger the current tool's action animation (and its world effect, if any).
+        if (input.isJustPressed(InputAction.USE_TOOL)) {
             toolActionSystem.trigger(player.toolIndex(), player.facing());
             if (toolActionSystem.isActive()) {
                 updateCamera();
@@ -340,10 +342,10 @@ public class PlayState extends GameState {
         player.stepWalk(delta, ix != 0 || iy != 0);
 
         farmInteraction.updateHover();
-        // Left-click a plantable tile to sow the selected seed; E harvests a mature crop under the mouse.
-        if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT) && farmInteraction.hoverPlantable())
+        // Left-click a plantable tile to sow the selected seed; HARVEST (E) reaps a mature crop under the mouse.
+        if (input.isPrimaryPointerJustPressed() && farmInteraction.hoverPlantable())
             farmInteraction.plantAtHover(selectedSlot);
-        if (Gdx.input.isKeyJustPressed(Input.Keys.E)) farmInteraction.harvestAtHover();
+        if (input.isJustPressed(InputAction.HARVEST)) farmInteraction.harvestAtHover();
 
         updateCamera();
     }
