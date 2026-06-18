@@ -6,6 +6,7 @@ import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import core.Assets;
+import core.Config;
 import core.GameState;
 import core.GameStateManager;
 import core.Log;
@@ -54,18 +55,12 @@ import static utilz.Constants.PlayerActionConstants.playerAnimationArrays;
  * Deferred: crops (none planted), tool actions / planting interaction.
  */
 public class PlayState extends GameState {
-    private static final float TILE = 96f;          // 64 * zoom(1.5)
-    // The world is bounded (Stardew-style, not infinite). All layers share these dimensions on one grid,
-    // so collision/soil/crops span the whole map instead of an old 40x22 corner of the larger grass field.
-    private static final int WORLD_COLS = 400;
-    private static final int WORLD_ROWS = 220;
-    private static final float MOVE_SPEED = 270f;
+    // Game-tuning dials (world size, tile size, move speed, autosave/grow timers) live in core.Config.
+    // These two are internal cadence/epsilon values, not design dials, so they stay here.
     private static final float ANIM_FRAME_TIME = 16f / 144f; // tool-action animation cadence
     private static final float COLLISION_ERR = 0.45f; // passed to CollisionResolver (push past the edge)
-    private static final float AUTOSAVE_INTERVAL = 120f; // seconds between autosaves
-    private static final long DEFAULT_STAGE_MILLIS = 3000L; // 5 stages -> ~12s to mature (tunable per crop)
     // Crop sprite/footprint geometry on a cell lives in CropGeometry (shared by collision, planting, draw).
-    private final CropGeometry cropGeometry = new CropGeometry(TILE);
+    private final CropGeometry cropGeometry = new CropGeometry(Config.TILE);
 
     private final GameCamera gameCamera; // world camera (follows the player) + screen-space HUD camera
 
@@ -94,7 +89,7 @@ public class PlayState extends GameState {
     private final CropField cropField;
     private FarmInteraction farmInteraction; // hover targeting + plant/harvest/till
     private WorldPersistence worldPersistence; // save snapshot + crop restore
-    private float autosaveTimer = 0; // counts up to AUTOSAVE_INTERVAL, then saves
+    private float autosaveTimer = 0; // counts up to Config.AUTOSAVE_INTERVAL, then saves
 
     // Data-driven tool Q-actions, indexed by toolIndex (null = no action for that tool). ToolActionSystem
     // owns the live animation/effect state; the array is filled by buildToolAction during construction.
@@ -198,7 +193,7 @@ public class PlayState extends GameState {
         // normalized to 0/1 (any legacy autotile index becomes "tilled?"); the dual grid derives the tiles.
         collisionLayer = placeIntoWorld(sCollision, false);
         grassLayer = (sGrass != null) ? placeIntoWorld(sGrass, false)
-                                      : GrassGenerator.randomGrass(WORLD_COLS, WORLD_ROWS, TILE, worldSeed);
+                                      : GrassGenerator.randomGrass(Config.WORLD_COLS, Config.WORLD_ROWS, Config.TILE, worldSeed);
         soil = new DualGridSoil(placeIntoWorld(sPlanting, true));
         // Rebuild the live Inventory from saved primitives (it's no longer serialized directly).
         Inventory inv = new Inventory(sInvItems != null ? sInvItems.length : 10);
@@ -223,7 +218,7 @@ public class PlayState extends GameState {
         cropRegistry = new CropRegistry(cropsTexture, ProbeLoader.loadOrFallback("crops.json",
                 () -> new JsonCropDataSource(Gdx.files.classpath("data/crops.json")),
                 CropDataSource::loadCropBlueprints,
-                DefaultCropDataSource::new), DEFAULT_STAGE_MILLIS);
+                DefaultCropDataSource::new), Config.DEFAULT_STAGE_MILLIS);
         // Items: same probe-load + fallback. The data file owns the tools; crop seed/produce items are
         // derived from the crop catalog so their names aren't duplicated out of crops.json.
         CropType[] cropTypes = new CropType[cropRegistry.count()];
@@ -234,11 +229,11 @@ public class PlayState extends GameState {
                 DefaultItemDataSource::new), cropTypes);
         inventoryHud = new InventoryHud(inventoryBarTexture, toggleTexture, fontTexture, itemRegistry, assets);
         cropField = new CropField(collisionLayer.cols(), collisionLayer.rows());
-        collisionResolver = new CollisionResolver(collisionLayer, cropField, cropGeometry, TILE, COLLISION_ERR);
+        collisionResolver = new CollisionResolver(collisionLayer, cropField, cropGeometry, Config.TILE, COLLISION_ERR);
         worldPersistence = new WorldPersistence(collisionLayer, grassLayer, soil, cropField, player,
                 inventoryItems, inventoryAmounts, cropRegistry, worldSeed);
         worldPersistence.restoreCrops(sCrops);
-        worldRenderer = new WorldRenderer(grassLayer, soil, collisionLayer, cropField, cropGeometry, TILE,
+        worldRenderer = new WorldRenderer(grassLayer, soil, collisionLayer, cropField, cropGeometry, Config.TILE,
                 grassRegions, soilRegions, collisionRegions);
         farmInteraction = new FarmInteraction(soil, cropField, cropRegistry, itemRegistry, cropGeometry,
                 collisionResolver, gameCamera, player, inventoryItems, inventoryAmounts);
@@ -253,11 +248,11 @@ public class PlayState extends GameState {
      *  empty layer; a smaller source (an old 40x22 save) occupies the corner. When {@code asTilledFlag},
      *  any nonzero source cell normalizes to 1 (legacy autotile indices → "tilled?"). */
     private static ChunkedTileLayer placeIntoWorld(int[][] src, boolean asTilledFlag) {
-        ChunkedTileLayer layer = new ChunkedTileLayer(WORLD_COLS, WORLD_ROWS, TILE);
+        ChunkedTileLayer layer = new ChunkedTileLayer(Config.WORLD_COLS, Config.WORLD_ROWS, Config.TILE);
         if (src == null) return layer;
-        int cols = Math.min(src.length, WORLD_COLS);
+        int cols = Math.min(src.length, Config.WORLD_COLS);
         for (int c = 0; c < cols; c++) {
-            int rows = Math.min(src[c].length, WORLD_ROWS);
+            int rows = Math.min(src[c].length, Config.WORLD_ROWS);
             for (int r = 0; r < rows; r++) {
                 int v = asTilledFlag ? (src[c][r] != 0 ? 1 : 0) : src[c][r];
                 layer.set(c, r, v);
@@ -306,7 +301,7 @@ public class PlayState extends GameState {
         boolean left  = Gdx.input.isKeyPressed(Input.Keys.LEFT)  || Gdx.input.isKeyPressed(Input.Keys.A);
         boolean right = Gdx.input.isKeyPressed(Input.Keys.RIGHT) || Gdx.input.isKeyPressed(Input.Keys.D);
 
-        float d = MOVE_SPEED * delta;
+        float d = Config.MOVE_SPEED * delta;
         int ix = (right ? 1 : 0) - (left ? 1 : 0);
         int iy = (down ? 1 : 0) - (up ? 1 : 0); // Y-down
         if (ix != 0 && iy != 0) {
@@ -357,10 +352,10 @@ public class PlayState extends GameState {
         gameCamera.follow(player.centerX(), player.centerY());
     }
 
-    /** Save every {@link #AUTOSAVE_INTERVAL} seconds so a crash doesn't lose progress between clean exits. */
+    /** Save every {@link Config#AUTOSAVE_INTERVAL} seconds so a crash doesn't lose progress between clean exits. */
     private void autosave(float delta) {
         autosaveTimer += delta;
-        if (autosaveTimer < AUTOSAVE_INTERVAL) return;
+        if (autosaveTimer < Config.AUTOSAVE_INTERVAL) return;
         autosaveTimer = 0;
         try {
             worldPersistence.save(selectedSlot);

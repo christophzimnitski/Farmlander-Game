@@ -4,10 +4,6 @@ import static utilz.Constants.PlayerActionConstants.*;
 import static utilz.Constants.PlayerActionConstants.WALK_DIGGING_RIGHT;
 
 public class Constants {
-    public static class Zoom {
-        public static float zoomMultiplier = 1.5f;
-    }
-
     public static class InventoryConstants {
         /**
          * Empty-slot sentinel. The tool ids (1-5) and crop ids (100-168) that used to live here are now
