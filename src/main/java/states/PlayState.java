@@ -30,6 +30,8 @@ import render.TextureSlicer;
 import save.CropSave;
 import save.SaveManager;
 import save.WorldSave;
+import tools.ToolAction;
+import tools.ToolActionSystem;
 import tools.data.DefaultToolActionDataSource;
 import tools.data.JsonToolActionDataSource;
 import tools.data.ToolActionDataSource;
@@ -113,27 +115,10 @@ public class PlayState extends GameState {
     private int hoverCol = -1, hoverRow = -1; // tile under the mouse this frame
     private boolean hoverPlantable = false;   // hovered tile is tilled soil and empty
 
-    // Data-driven tool Q-actions, indexed by toolIndex (null = no action for that tool).
+    // Data-driven tool Q-actions, indexed by toolIndex (null = no action for that tool). ToolActionSystem
+    // owns the live animation/effect state; the array is filled by buildToolAction during construction.
     private final ToolAction[] toolActions = new ToolAction[playerAnimationArrays.length];
-    private ToolAction activeAction = null; // non-null while an action animation plays
-    private int actionDir = 2;              // captured facing for the active action
-    private int actionFrame = 0;
-    private float actionTimer = 0;
-    private boolean effectDone = false;
-
-    /** A tool's Q-action: per-direction frames, frame count, the frame it acts on the world
-     *  (-1 = none) and what that effect is, and how big / where to draw (for oversized 128px swings). */
-    private static final class ToolAction {
-        final TextureRegion[][] frames; // [4 dirs: up,left,down,right][frameCount]
-        final int frameCount, effectFrame;
-        final String effect;            // world effect to fire at effectFrame ("till", or null/none)
-        final float drawSize, offX, offY;
-        ToolAction(TextureRegion[][] frames, int frameCount, int effectFrame, String effect,
-                   float drawSize, float offX, float offY) {
-            this.frames = frames; this.frameCount = frameCount; this.effectFrame = effectFrame;
-            this.effect = effect; this.drawSize = drawSize; this.offX = offX; this.offY = offY;
-        }
-    }
+    private ToolActionSystem toolActionSystem;
 
     private float playerX, playerY;
     private int[] walkActions;
@@ -196,6 +181,8 @@ public class PlayState extends GameState {
             toolData = new DefaultToolActionDataSource();
         }
         for (ToolActionBlueprint blueprint : toolData.loadToolActionBlueprints()) buildToolAction(blueprint);
+        // At the effect frame, the system calls back into applyActionEffect (today: till).
+        toolActionSystem = new ToolActionSystem(toolActions, ANIM_FRAME_TIME, this::applyActionEffect);
 
         inventoryBarRegion = TextureSlicer.flippedFull(inventoryBarTexture);
         toggleRegion = TextureSlicer.flippedFull(toggleTexture);
@@ -472,18 +459,9 @@ public class PlayState extends GameState {
     public void update(float delta) {
         if (Gdx.input.isKeyPressed(Input.Keys.ESCAPE)) Gdx.app.exit();
 
-        // A tool Q-action is playing out: animate it, no movement.
-        if (activeAction != null) {
-            actionTimer += delta;
-            if (actionTimer >= ANIM_FRAME_TIME) {
-                actionTimer -= ANIM_FRAME_TIME;
-                actionFrame++;
-                if (actionFrame == activeAction.effectFrame && !effectDone) {
-                    applyActionEffect(activeAction.effect, actionDir);
-                    effectDone = true;
-                }
-                if (actionFrame >= activeAction.frameCount) activeAction = null;
-            }
+        // A tool Q-action is playing out: animate it (firing its effect at the effect frame), no movement.
+        if (toolActionSystem.isActive()) {
+            toolActionSystem.update(delta);
             updateCamera();
             return;
         }
@@ -531,14 +509,12 @@ public class PlayState extends GameState {
         currentAnimation = walkActions[facing];
 
         // Q: trigger the current tool's Q-action animation (and its world effect, if any).
-        if (Gdx.input.isKeyJustPressed(Input.Keys.Q) && toolActions[toolIndex] != null) {
-            activeAction = toolActions[toolIndex];
-            actionDir = facing;
-            actionFrame = 0;
-            actionTimer = 0;
-            effectDone = false;
-            updateCamera();
-            return;
+        if (Gdx.input.isKeyJustPressed(Input.Keys.Q)) {
+            toolActionSystem.trigger(toolIndex, facing);
+            if (toolActionSystem.isActive()) {
+                updateCamera();
+                return;
+            }
         }
 
         boolean moving = ix != 0 || iy != 0;
@@ -628,10 +604,10 @@ public class PlayState extends GameState {
     }
 
     private void drawPlayer(SpriteBatch batch) {
-        if (activeAction != null) {
-            TextureRegion frame = activeAction.frames[actionDir][Math.min(actionFrame, activeAction.frameCount - 1)];
-            batch.draw(frame, playerX + activeAction.offX, playerY + activeAction.offY,
-                       activeAction.drawSize, activeAction.drawSize);
+        ToolAction action = toolActionSystem.current();
+        if (action != null) {
+            TextureRegion frame = action.frames[toolActionSystem.currentDir()][toolActionSystem.currentFrame()];
+            batch.draw(frame, playerX + action.offX, playerY + action.offY, action.drawSize, action.drawSize);
         } else {
             batch.draw(playerFrames[currentAnimation][frameIndex], playerX, playerY, PLAYER_SIZE, PLAYER_SIZE);
         }
