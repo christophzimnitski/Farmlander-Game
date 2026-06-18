@@ -3,12 +3,10 @@ package states;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.Color;
-import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
-import com.badlogic.gdx.math.Vector3;
 import core.Assets;
 import core.GameState;
 import core.GameStateManager;
@@ -25,6 +23,7 @@ import items.ItemRegistry;
 import items.data.DefaultItemDataSource;
 import items.data.ItemDataSource;
 import items.data.JsonItemDataSource;
+import render.GameCamera;
 import render.TextureSlicer;
 import save.CropSave;
 import save.SaveManager;
@@ -71,8 +70,7 @@ public class PlayState extends GameState {
     // Crop sprite/footprint geometry on a cell lives in CropGeometry (shared by collision, planting, draw).
     private final CropGeometry cropGeometry = new CropGeometry(TILE);
 
-    private final OrthographicCamera camera;
-    private final OrthographicCamera hudCamera; // screen-space HUD, Y-down like the world
+    private final GameCamera gameCamera; // world camera (follows the player) + screen-space HUD camera
 
     private final Texture grassTexture, plowedTexture, tallGrassTexture, wheatTexture, youngWheatTexture,
             playerTexture, chopTexture;
@@ -104,7 +102,6 @@ public class PlayState extends GameState {
     private final TextureRegion whiteRegion;
     private int hoverCol = -1, hoverRow = -1; // tile under the mouse this frame
     private boolean hoverPlantable = false;   // hovered tile is tilled soil and empty
-    private final Vector3 mouseWorld = new Vector3();
 
     // Data-driven tool Q-actions, indexed by toolIndex (null = no action for that tool).
     private final ToolAction[] toolActions = new ToolAction[playerAnimationArrays.length];
@@ -139,11 +136,7 @@ public class PlayState extends GameState {
     public PlayState(GameStateManager stateManager) {
         super(stateManager);
 
-        int w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
-        camera = new OrthographicCamera();
-        camera.setToOrtho(true, w, h); // Y-down to match Swing
-        hudCamera = new OrthographicCamera();
-        hudCamera.setToOrtho(true, w, h);
+        gameCamera = new GameCamera(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
 
         grassTexture      = loadTexture("tilesets/grassTileset.png");
         plowedTexture     = loadTexture("tilesets/plowed_soil.png");
@@ -493,7 +486,7 @@ public class PlayState extends GameState {
         float invX = w / 2f - invW / 2f, invY = h * 7f / 8f;
         float slot = invW / 10f;
 
-        batch.setProjectionMatrix(hudCamera.combined);
+        batch.setProjectionMatrix(gameCamera.hudCombined());
         batch.begin();
         batch.draw(inventoryBarRegion, invX, invY, invW, invH);
         batch.draw(toggleRegion, invX + selectedSlot * slot, invY, slot, invH);
@@ -620,8 +613,7 @@ public class PlayState extends GameState {
     /** Resolve the cell under the mouse. A cell is plantable when it's tilled soil, empty, and planting
      *  there wouldn't immediately overlap the player. */
     private void updateHover() {
-        mouseWorld.set(Gdx.input.getX(), Gdx.input.getY(), 0);
-        camera.unproject(mouseWorld);
+        var mouseWorld = gameCamera.unproject(Gdx.input.getX(), Gdx.input.getY());
         hoverCol = soil.grid().colAtWorldX(mouseWorld.x);
         hoverRow = soil.grid().rowAtWorldY(mouseWorld.y);
         hoverPlantable = soil.isTilled(hoverCol, hoverRow) && cropField.isOpen(hoverCol, hoverRow)
@@ -658,8 +650,7 @@ public class PlayState extends GameState {
     }
 
     private void updateCamera() {
-        camera.position.set(playerX + PLAYER_SIZE / 2f, playerY + PLAYER_SIZE / 2f, 0);
-        camera.update();
+        gameCamera.follow(playerX + PLAYER_SIZE / 2f, playerY + PLAYER_SIZE / 2f);
     }
 
     /** Apply a tool action's world effect at its effect frame. Only tilling has one today; new
@@ -701,7 +692,7 @@ public class PlayState extends GameState {
 
     @Override
     public void render(SpriteBatch batch) {
-        batch.setProjectionMatrix(camera.combined);
+        batch.setProjectionMatrix(gameCamera.worldCombined());
         batch.begin();
         drawArray(batch, grassLayer, grassRegions);
         soil.render(batch, soilRegions);
@@ -755,8 +746,7 @@ public class PlayState extends GameState {
 
     @Override
     public void resize(int width, int height) {
-        camera.setToOrtho(true, width, height);
-        hudCamera.setToOrtho(true, width, height);
+        gameCamera.resize(width, height);
     }
 
     @Override
