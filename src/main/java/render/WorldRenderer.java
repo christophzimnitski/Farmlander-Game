@@ -5,7 +5,7 @@ import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
-import com.badlogic.gdx.math.Matrix4;
+import com.badlogic.gdx.math.Rectangle;
 import crops.CropField;
 import crops.CropGeometry;
 import crops.PlantedCrop;
@@ -61,20 +61,23 @@ public final class WorldRenderer {
         this.whiteRegion = new TextureRegion(whiteTexture);
     }
 
-    /** One world pass: grass → soil → highlight → crops/bushes/player depth-sorted, between begin/end. */
-    public void render(SpriteBatch batch, Matrix4 worldCombined, PlayerCharacter player,
+    /** One world pass: grass → soil → highlight → crops/bushes/player depth-sorted, between begin/end.
+     *  Every layer is frustum-culled to {@code camera}'s visible rectangle, so the cost is the on-screen
+     *  cells, not the whole map (the grass grid alone is 400×220). */
+    public void render(SpriteBatch batch, GameCamera camera, PlayerCharacter player,
                        ToolActionSystem toolActions, int hoverCol, int hoverRow, boolean hoverPlantable) {
+        Rectangle view = camera.worldViewBounds();
         float feetY = player.feetY();
-        batch.setProjectionMatrix(worldCombined);
+        batch.setProjectionMatrix(camera.worldCombined());
         batch.begin();
-        drawArray(batch, grass, grassRegions);
-        soil.render(batch, soilRegions);
+        drawArray(batch, grass, grassRegions, view);
+        drawSoil(batch, view);
         drawHighlight(batch, hoverCol, hoverRow, hoverPlantable);
-        drawCrops(batch, feetY, false);     // crops rooted above the player -> behind
-        drawCollision(batch, feetY, false); // bushes behind
+        drawCrops(batch, feetY, false, view);     // crops rooted above the player -> behind
+        drawCollision(batch, feetY, false, view); // bushes behind
         drawPlayer(batch, player, toolActions);
-        drawCollision(batch, feetY, true);  // bushes in front
-        drawCrops(batch, feetY, true);      // crops rooted at/below the player -> in front
+        drawCollision(batch, feetY, true, view);  // bushes in front
+        drawCrops(batch, feetY, true, view);      // crops rooted at/below the player -> in front
         batch.end();
     }
 
@@ -82,9 +85,18 @@ public final class WorldRenderer {
         whiteTexture.dispose();
     }
 
-    private void drawArray(SpriteBatch batch, TileLayer layer, TextureRegion[] regions) {
-        for (int j = 0; j < layer.cols(); j++) {
-            for (int i = 0; i < layer.rows(); i++) {
+    private static int clamp(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+    /** First cell-column whose tile could touch {@code worldX}, padded one cell each side and clamped. */
+    private int minCol(float worldX, int cols) { return clamp((int) Math.floor(worldX / tile) - 1, 0, cols - 1); }
+
+    private int maxCol(float worldX, int cols) { return clamp((int) Math.floor(worldX / tile) + 1, 0, cols - 1); }
+
+    private void drawArray(SpriteBatch batch, TileLayer layer, TextureRegion[] regions, Rectangle view) {
+        int loCol = minCol(view.x, layer.cols()), hiCol = maxCol(view.x + view.width, layer.cols());
+        int loRow = minCol(view.y, layer.rows()), hiRow = maxCol(view.y + view.height, layer.rows());
+        for (int j = loCol; j <= hiCol; j++) {
+            for (int i = loRow; i <= hiRow; i++) {
                 int v = layer.get(j, i);
                 if (v >= 1 && v < regions.length && regions[v] != null) {
                     batch.draw(regions[v], j * tile, i * tile, tile, tile);
@@ -93,9 +105,21 @@ public final class WorldRenderer {
         }
     }
 
-    private void drawCollision(SpriteBatch batch, float feetY, boolean inFront) {
-        for (int j = 0; j < collision.cols(); j++) {
-            for (int i = 0; i < collision.rows(); i++) {
+    /** Soil nodes sit on cell corners, so the node grid is one wider/taller than the cells (0..cols). */
+    private void drawSoil(SpriteBatch batch, Rectangle view) {
+        TileLayer grid = soil.grid();
+        int loCol = clamp((int) Math.floor(view.x / tile) - 1, 0, grid.cols());
+        int hiCol = clamp((int) Math.floor((view.x + view.width) / tile) + 1, 0, grid.cols());
+        int loRow = clamp((int) Math.floor(view.y / tile) - 1, 0, grid.rows());
+        int hiRow = clamp((int) Math.floor((view.y + view.height) / tile) + 1, 0, grid.rows());
+        soil.render(batch, soilRegions, loCol, hiCol, loRow, hiRow);
+    }
+
+    private void drawCollision(SpriteBatch batch, float feetY, boolean inFront, Rectangle view) {
+        int loCol = minCol(view.x, collision.cols()), hiCol = maxCol(view.x + view.width, collision.cols());
+        int loRow = minCol(view.y, collision.rows()), hiRow = maxCol(view.y + view.height, collision.rows());
+        for (int j = loCol; j <= hiCol; j++) {
+            for (int i = loRow; i <= hiRow; i++) {
                 int v = collision.get(j, i);
                 if (v < 1 || v >= collisionRegions.length || collisionRegions[v] == null) continue;
                 float threshold = i * tile + DEPTH_OFFSET;
@@ -119,11 +143,16 @@ public final class WorldRenderer {
         batch.setColor(Color.WHITE);
     }
 
-    /** Draw planted crops at their current growth stage, depth-split around the player like the bushes. */
-    private void drawCrops(SpriteBatch batch, float feetY, boolean inFront) {
+    /** Draw planted crops at their current growth stage, depth-split around the player like the bushes.
+     *  Culled to the view, but with extra rows below (larger Y) since a crop's 2-tile sprite reaches up
+     *  into the view from a root that may sit just past the bottom edge. */
+    private void drawCrops(SpriteBatch batch, float feetY, boolean inFront, Rectangle view) {
         long now = System.currentTimeMillis();
-        for (int j = 0; j < crops.cols(); j++) {
-            for (int i = 0; i < crops.rows(); i++) {
+        int loCol = minCol(view.x, crops.cols()), hiCol = maxCol(view.x + view.width, crops.cols());
+        int loRow = clamp((int) Math.floor(view.y / tile) - 1, 0, crops.rows() - 1);
+        int hiRow = clamp((int) Math.floor((view.y + view.height) / tile) + 2, 0, crops.rows() - 1);
+        for (int j = loCol; j <= hiCol; j++) {
+            for (int i = loRow; i <= hiRow; i++) {
                 PlantedCrop crop = crops.at(j, i);
                 if (crop == null) continue;
                 // Centered on the cell, with the root anchor (cell center) sitting 1/4 tile above the

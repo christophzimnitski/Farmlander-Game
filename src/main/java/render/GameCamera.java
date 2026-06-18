@@ -2,6 +2,7 @@ package render;
 
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.math.Matrix4;
+import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector3;
 
 /**
@@ -15,6 +16,7 @@ public final class GameCamera {
     private final OrthographicCamera world = new OrthographicCamera();
     private final OrthographicCamera hud = new OrthographicCamera();
     private final Vector3 scratch = new Vector3(); // reused by unproject — no per-call allocation
+    private final Rectangle viewBounds = new Rectangle(); // reused by worldViewBounds — no per-call allocation
 
     public GameCamera(int width, int height) {
         resize(width, height);
@@ -37,6 +39,19 @@ public final class GameCamera {
 
     /** Projection matrix for drawing the screen-space HUD. */
     public Matrix4 hudCombined() { return hud.combined; }
+
+    /**
+     * The world-space rectangle the world camera currently sees (centre = camera position, extent =
+     * viewport × zoom). Used to frustum-cull world draws and collision scans to what's on screen. Returns
+     * a shared scratch rectangle — read it immediately, don't hold the reference. Y-down like everything
+     * else, so {@code y} is the top edge; for culling only the min/max span matters.
+     */
+    public Rectangle worldViewBounds() {
+        float halfW = world.viewportWidth * 0.5f * world.zoom;
+        float halfH = world.viewportHeight * 0.5f * world.zoom;
+        viewBounds.set(world.position.x - halfW, world.position.y - halfH, halfW * 2f, halfH * 2f);
+        return viewBounds;
+    }
 
     /**
      * Convert a screen-pixel position (e.g. the mouse) to a world position through the world camera.

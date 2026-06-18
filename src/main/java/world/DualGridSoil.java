@@ -86,10 +86,20 @@ public final class DualGridSoil {
      * @param soilRegions tiles sliced from {@code plowed_soil.png}, indexed 1..18 (index 0 unused)
      */
     public void render(SpriteBatch batch, TextureRegion[] soilRegions) {
+        render(batch, soilRegions, 0, tilled.cols(), 0, tilled.rows());
+    }
+
+    /**
+     * Draw only the nodes in the inclusive {@code [minNodeCol..maxNodeCol] × [minNodeRow..maxNodeRow]}
+     * range — the frustum-culled path the renderer uses so off-screen soil isn't walked every frame. The
+     * caller clamps the range to {@code [0..cols] × [0..rows]} (one extra node past the last cell).
+     */
+    public void render(SpriteBatch batch, TextureRegion[] soilRegions,
+                       int minNodeCol, int maxNodeCol, int minNodeRow, int maxNodeRow) {
         float tileSize = tilled.tileSize();
         float half = tileSize / 2f;
-        for (int nodeCol = 0; nodeCol <= tilled.cols(); nodeCol++) {
-            for (int nodeRow = 0; nodeRow <= tilled.rows(); nodeRow++) {
+        for (int nodeCol = minNodeCol; nodeCol <= maxNodeCol; nodeCol++) {
+            for (int nodeRow = minNodeRow; nodeRow <= maxNodeRow; nodeRow++) {
                 int tile = tileForMask(maskAt(nodeCol, nodeRow));
                 if (tile <= 0 || tile >= soilRegions.length || soilRegions[tile] == null) continue;
                 batch.draw(soilRegions[tile],

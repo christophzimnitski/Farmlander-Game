@@ -353,7 +353,7 @@ public class PlayState extends GameState {
 
     @Override
     public void render(SpriteBatch batch) {
-        worldRenderer.render(batch, gameCamera.worldCombined(), player, toolActionSystem,
+        worldRenderer.render(batch, gameCamera, player, toolActionSystem,
                              farmInteraction.hoverCol(), farmInteraction.hoverRow(),
                              farmInteraction.hoverPlantable());
         inventoryHud.render(batch, gameCamera.hudCombined(), inventoryItems, inventoryAmounts, selectedSlot);
