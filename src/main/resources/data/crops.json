@@ -138,12 +138,6 @@
     "spriteTopRow": 0
   },
   {
-    "index": 22,
-    "name": "Yellow Bell Pepper",
-    "spriteColumn": 22,
-    "spriteTopRow": 0
-  },
-  {
     "index": 23,
     "name": "Chili Pepper",
     "spriteColumn": 23,
@@ -199,210 +193,216 @@
   },
   {
     "index": 32,
+    "name": "Maize",
+    "spriteColumn": 32,
+    "spriteTopRow": 0
+  },
+  {
+    "index": 33,
     "name": "Asparagus",
     "spriteColumn": 0,
     "spriteTopRow": 5
   },
   {
-    "index": 33,
+    "index": 34,
     "name": "Rhubarb",
     "spriteColumn": 1,
     "spriteTopRow": 5
   },
   {
-    "index": 34,
+    "index": 35,
     "name": "Romaine Lettuce",
     "spriteColumn": 2,
     "spriteTopRow": 5
   },
   {
-    "index": 35,
+    "index": 36,
     "name": "Iceberg Lettuce",
     "spriteColumn": 3,
     "spriteTopRow": 5
   },
   {
-    "index": 36,
+    "index": 37,
     "name": "Kale",
     "spriteColumn": 4,
     "spriteTopRow": 5
   },
   {
-    "index": 37,
+    "index": 38,
     "name": "Red Cabbage",
     "spriteColumn": 5,
     "spriteTopRow": 5
   },
   {
-    "index": 38,
+    "index": 39,
     "name": "Cabbage",
     "spriteColumn": 6,
     "spriteTopRow": 5
   },
   {
-    "index": 39,
+    "index": 40,
     "name": "Celery",
     "spriteColumn": 7,
     "spriteTopRow": 5
   },
   {
-    "index": 40,
+    "index": 41,
     "name": "Bok Choy",
     "spriteColumn": 8,
     "spriteTopRow": 5
   },
   {
-    "index": 41,
+    "index": 42,
     "name": "Fennel Bulb",
     "spriteColumn": 9,
     "spriteTopRow": 5
   },
   {
-    "index": 42,
+    "index": 43,
     "name": "Brussels Sprouts",
     "spriteColumn": 10,
     "spriteTopRow": 5
   },
   {
-    "index": 43,
+    "index": 44,
     "name": "Cauliflower",
     "spriteColumn": 11,
     "spriteTopRow": 5
   },
   {
-    "index": 44,
+    "index": 45,
     "name": "Broccoli",
     "spriteColumn": 12,
     "spriteTopRow": 5
   },
   {
-    "index": 45,
+    "index": 46,
     "name": "Artichoke",
     "spriteColumn": 13,
     "spriteTopRow": 5
   },
   {
-    "index": 46,
+    "index": 47,
     "name": "Leek",
     "spriteColumn": 14,
     "spriteTopRow": 5
   },
   {
-    "index": 47,
+    "index": 48,
     "name": "Kohlrabi",
     "spriteColumn": 15,
     "spriteTopRow": 5
   },
   {
-    "index": 48,
+    "index": 49,
     "name": "Eggplant",
     "spriteColumn": 16,
     "spriteTopRow": 5
   },
   {
-    "index": 49,
+    "index": 50,
     "name": "Zucchini",
     "spriteColumn": 17,
     "spriteTopRow": 5
   },
   {
-    "index": 50,
+    "index": 51,
     "name": "Yellow Squash",
     "spriteColumn": 18,
     "spriteTopRow": 5
   },
   {
-    "index": 51,
+    "index": 52,
     "name": "Cucumber",
     "spriteColumn": 19,
     "spriteTopRow": 5
   },
   {
-    "index": 52,
+    "index": 53,
     "name": "Strawberry",
     "spriteColumn": 20,
     "spriteTopRow": 5
   },
   {
-    "index": 53,
+    "index": 54,
     "name": "Blackberry",
     "spriteColumn": 21,
     "spriteTopRow": 5
   },
   {
-    "index": 54,
-    "name": "Yellow Bell Pepper",
-    "spriteColumn": 22,
-    "spriteTopRow": 5
-  },
-  {
-    "index": 55,
+    "index": 56,
     "name": "Raspberry",
     "spriteColumn": 23,
     "spriteTopRow": 5
   },
   {
-    "index": 56,
+    "index": 57,
     "name": "Blueberry",
     "spriteColumn": 24,
     "spriteTopRow": 5
   },
   {
-    "index": 57,
+    "index": 58,
     "name": "Grapes",
     "spriteColumn": 25,
     "spriteTopRow": 5
   },
   {
-    "index": 58,
+    "index": 59,
     "name": "Green Grapes",
     "spriteColumn": 26,
     "spriteTopRow": 5
   },
   {
-    "index": 59,
+    "index": 60,
     "name": "Cherry Tomatoes",
     "spriteColumn": 27,
     "spriteTopRow": 5
   },
   {
-    "index": 60,
+    "index": 61,
     "name": "Tomato",
     "spriteColumn": 28,
     "spriteTopRow": 5
   },
   {
-    "index": 61,
+    "index": 62,
     "name": "Large Tomato",
     "spriteColumn": 29,
     "spriteTopRow": 5
   },
   {
-    "index": 62,
+    "index": 63,
     "name": "Peas",
     "spriteColumn": 30,
     "spriteTopRow": 5
   },
   {
-    "index": 63,
+    "index": 64,
     "name": "Hops",
     "spriteColumn": 31,
     "spriteTopRow": 5
   },
   {
-    "index": 64,
+    "index": 65,
+    "name": "Green Beans",
+    "spriteColumn": 32,
+    "spriteTopRow": 5
+  },
+  {
+    "index": 66,
     "name": "Coffee",
     "spriteColumn": 29,
     "spriteTopRow": 10
   },
   {
-    "index": 65,
+    "index": 67,
     "name": "Pineapple",
     "spriteColumn": 30,
     "spriteTopRow": 10
   },
   {
-    "index": 66,
+    "index": 68,
     "name": "Kiwi",
     "spriteColumn": 31,
     "spriteTopRow": 10

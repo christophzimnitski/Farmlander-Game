@@ -32,10 +32,15 @@ public final class CropRegistry {
         types = new CropType[size];
 
         float tw = sheet.getWidth(), th = sheet.getHeight(), pad = 0.5f;
+        int lastColumn = (int) (tw / TILE_W) - 1;
         for (CropBlueprint blueprint : blueprints) {
+            // A couple of vestigial crops (Maize, Green Beans) live in column 32, past the 32-wide
+            // sheet; clamp so slicing stays in bounds instead of sampling garbage. They have no real
+            // field art anyway — they exist only as inventory items.
+            int column = Math.min(blueprint.spriteColumn, lastColumn);
             TextureRegion[] stages = new TextureRegion[STAGES];
             for (int s = 0; s < STAGES; s++) {
-                int sx = blueprint.spriteColumn * TILE_W, sy = (blueprint.spriteTopRow + s) * TILE_H;
+                int sx = column * TILE_W, sy = (blueprint.spriteTopRow + s) * TILE_H;
                 TextureRegion r = new TextureRegion(sheet);
                 r.setRegion((sx + pad) / tw, (sy + pad) / th,
                             (sx + TILE_W - pad) / tw, (sy + TILE_H - pad) / th);
