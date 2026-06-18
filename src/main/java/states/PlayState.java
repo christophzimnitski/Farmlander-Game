@@ -32,6 +32,7 @@ import save.SaveManager;
 import save.WorldSave;
 import tools.ToolAction;
 import tools.ToolActionSystem;
+import ui.InventoryHud;
 import tools.data.DefaultToolActionDataSource;
 import tools.data.JsonToolActionDataSource;
 import tools.data.ToolActionDataSource;
@@ -44,9 +45,7 @@ import static utilz.Constants.PlayerActionConstants.playerAnimationArrays;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Renders your real saved world (grass + tilled soil + collidables, depth-sorted
@@ -77,16 +76,12 @@ public class PlayState extends GameState {
 
     private final Texture grassTexture, plowedTexture, tallGrassTexture, wheatTexture, youngWheatTexture,
             playerTexture, chopTexture;
-    private final Texture inventoryBarTexture, toggleTexture, fontTexture;
     private final TextureRegion[] grassRegions, soilRegions, collisionRegions;
     private final TextureRegion[][] playerFrames;
-    private final TextureRegion inventoryBarRegion, toggleRegion;
-    private final TextureRegion[] numberRegions; // 0..10, sliced from game_font (8x8)
+    private final InventoryHud inventoryHud; // screen-space inventory bar (owns its regions + icon cache)
 
     // Every classpath texture is owned by one lazy cache (load-on-first-use + dispose-all).
     private final Assets assets = new Assets();
-    // Item HUD icons: their sliced regions are cached here; the underlying textures live in `assets`.
-    private final Map<Integer, TextureRegion> itemIconRegions = new HashMap<>();
 
     // World grid (single source of truth for all per-cell state). Soil is a dual grid: gameplay reads
     // the `tilled` flags on `soil`; the visuals are derived on a half-tile-offset grid at render time.
@@ -140,9 +135,10 @@ public class PlayState extends GameState {
         youngWheatTexture = loadTexture("tilesets/youngwheat.png");
         playerTexture     = loadTexture("player_animations/player_mining.png");
         chopTexture       = loadTexture("player_animations/player_chopping.png");
-        inventoryBarTexture = loadTexture("ui/Inventory.png");
-        toggleTexture       = loadTexture("ui/toggle.png");
-        fontTexture         = loadTexture("ui/game_font.png");
+        // HUD sheets — kept local; InventoryHud slices and owns their regions (textures stay in `assets`).
+        Texture inventoryBarTexture = loadTexture("ui/Inventory.png");
+        Texture toggleTexture       = loadTexture("ui/toggle.png");
+        Texture fontTexture         = loadTexture("ui/game_font.png");
 
         grassRegions    = TextureSlicer.slice(grassTexture, 1, 3);
         soilRegions     = TextureSlicer.slice(plowedTexture, 6, 3); // plowed_soil tiles 1..18, indexed by DualGridSoil
@@ -183,16 +179,6 @@ public class PlayState extends GameState {
         for (ToolActionBlueprint blueprint : toolData.loadToolActionBlueprints()) buildToolAction(blueprint);
         // At the effect frame, the system calls back into applyActionEffect (today: till).
         toolActionSystem = new ToolActionSystem(toolActions, ANIM_FRAME_TIME, this::applyActionEffect);
-
-        inventoryBarRegion = TextureSlicer.flippedFull(inventoryBarTexture);
-        toggleRegion = TextureSlicer.flippedFull(toggleTexture);
-        // game_font.png: 1 row of 11 number glyphs, 8x8 each.
-        numberRegions = new TextureRegion[11];
-        for (int k = 0; k < 11; k++) {
-            TextureRegion r = new TextureRegion(fontTexture, k * 8, 0, 8, 8);
-            r.flip(false, true);
-            numberRegions[k] = r;
-        }
 
         int[][] sCollision, sPlanting, sGrass;
         float px, py;
@@ -289,6 +275,7 @@ public class PlayState extends GameState {
         CropType[] cropTypes = new CropType[cropRegistry.count()];
         for (int i = 0; i < cropTypes.length; i++) cropTypes[i] = cropRegistry.get(i);
         itemRegistry = new ItemRegistry(itemData.loadItemBlueprints(), cropTypes);
+        inventoryHud = new InventoryHud(inventoryBarTexture, toggleTexture, fontTexture, itemRegistry, assets);
         cropField = new CropField(collisionLayer.cols(), collisionLayer.rows());
         collisionResolver = new CollisionResolver(collisionLayer, cropField, cropGeometry, TILE, COLLISION_ERR);
         if (sCrops != null) restoreCrops(sCrops);
@@ -366,23 +353,6 @@ public class PlayState extends GameState {
                 new ToolAction(frames, frameCount, blueprint.effectFrame, blueprint.effect, drawSize, off, off);
     }
 
-    /** HUD icon for an item, loaded on demand (cached, null cached too so we don't retry). The path
-     *  comes from the ItemRegistry (which applies the food/<id>.png convention for crop items). */
-    private TextureRegion itemIcon(int id) {
-        if (itemIconRegions.containsKey(id)) return itemIconRegions.get(id);
-        TextureRegion region = null;
-        String path = itemRegistry.iconPath(id);
-        try {
-            if (path == null) { itemIconRegions.put(id, null); return null; }
-            Texture t = loadTexture(path); // owned + deduped by the Assets cache
-            region = new TextureRegion(t);
-            region.flip(false, true);
-        } catch (Exception ignored) {
-        }
-        itemIconRegions.put(id, region);
-        return region;
-    }
-
     /** Would the player's feet hitbox collide if its top-left were at (px,py)? Maps to the world resolver. */
     private boolean collidesAt(float px, float py) {
         return collisionResolver.collidesAt(px + HITBOX_OFF_X, py + HITBOX_OFF_Y, HITBOX_W, HITBOX_H);
@@ -418,41 +388,6 @@ public class PlayState extends GameState {
                 }
             }
         }
-    }
-
-    private void drawHud(SpriteBatch batch) {
-        float w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
-        float invW = 1200, invH = invW / 10f; // 120
-        float invX = w / 2f - invW / 2f, invY = h * 7f / 8f;
-        float slot = invW / 10f;
-
-        batch.setProjectionMatrix(gameCamera.hudCombined());
-        batch.begin();
-        batch.draw(inventoryBarRegion, invX, invY, invW, invH);
-        batch.draw(toggleRegion, invX + selectedSlot * slot, invY, slot, invH);
-        for (int i = 0; i < inventoryItems.length; i++) {
-            if (inventoryItems[i] != 0) {
-                TextureRegion icon = itemIcon(inventoryItems[i]);
-                if (icon != null) {
-                    batch.draw(icon, invX + i * slot + w / 120f, invY + h / 80f, invW / 15f, invH / 1.5f);
-                }
-                // Draw the amount digit by digit (the font row is "-123456789 0 -", so digit d is at
-                // glyph index d, except 0 which lives at index 10). This shows 10+ instead of a lone "0".
-                // Each glyph cell is drawn glyphW wide but the digit only fills its middle ~50%, so advance
-                // by ~0.6*glyphW: the cells overlap only in their transparent padding, giving tight digits.
-                String digits = Integer.toString(Math.max(0, inventoryAmounts[i]));
-                float glyphW = invW / 50f, adv = glyphW * 0.6f;
-                float numX = invX + i * slot + w / 32f, numY = invY + h / 18f;
-                // Right-align: the ones digit stays anchored at numX, extra digits grow to the left, so
-                // the ones place lines up whether the amount is 1 or 2+ digits (9 -> 10 doesn't shift).
-                for (int d = 0; d < digits.length(); d++) {
-                    int digit = digits.charAt(d) - '0';
-                    float x = numX - (digits.length() - 1 - d) * adv;
-                    batch.draw(numberRegions[digit == 0 ? 10 : digit], x, numY, glyphW, invH / 7f);
-                }
-            }
-        }
-        batch.end();
     }
 
     @Override
@@ -627,7 +562,7 @@ public class PlayState extends GameState {
         drawCrops(batch, true);      // crops rooted at/below the player -> in front
         batch.end();
 
-        drawHud(batch);
+        inventoryHud.render(batch, gameCamera.hudCombined(), inventoryItems, inventoryAmounts, selectedSlot);
     }
 
     /** Highlight the hovered tile: green when plantable, yellow when it holds a mature (harvestable) crop. */
