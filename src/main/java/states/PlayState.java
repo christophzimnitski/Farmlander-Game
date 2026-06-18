@@ -24,8 +24,6 @@ import items.ItemRegistry;
 import items.data.DefaultItemDataSource;
 import items.data.ItemDataSource;
 import items.data.JsonItemDataSource;
-import levels.GrassLayer;
-import levels.PlantingLayer;
 import save.CropSave;
 import save.SaveManager;
 import save.WorldSave;
@@ -33,6 +31,9 @@ import tools.data.DefaultToolActionDataSource;
 import tools.data.JsonToolActionDataSource;
 import tools.data.ToolActionDataSource;
 import tools.data.ToolActionBlueprint;
+import world.DualGridSoil;
+import world.GrassGenerator;
+import world.TileLayer;
 
 import static utilz.Constants.PlayerActionConstants.playerAnimationArrays;
 
@@ -77,7 +78,7 @@ public class PlayState extends GameState {
     private final Texture grassTexture, plowedTexture, tallGrassTexture, wheatTexture, youngWheatTexture,
             playerTexture, chopTexture;
     private final Texture inventoryBarTexture, toggleTexture, fontTexture;
-    private final TextureRegion[] grassRegions, plantingRegions, collisionRegions;
+    private final TextureRegion[] grassRegions, soilRegions, collisionRegions;
     private final TextureRegion[][] playerFrames;
     private final TextureRegion inventoryBarRegion, toggleRegion;
     private final TextureRegion[] numberRegions; // 0..10, sliced from game_font (8x8)
@@ -87,8 +88,10 @@ public class PlayState extends GameState {
     // Item HUD icons: their sliced regions are cached here; the underlying textures live in `assets`.
     private final Map<Integer, TextureRegion> itemIconRegions = new HashMap<>();
 
-    private final int[][] grass, planting, collision;
-    private final PlantingLayer plantingLayer; // reused for its editLayer/autotile logic
+    // World grid (single source of truth for all per-cell state). Soil is a dual grid: gameplay reads
+    // the `tilled` flags on `soil`; the visuals are derived on a half-tile-offset grid at render time.
+    private final TileLayer grassLayer, collisionLayer;
+    private final DualGridSoil soil;
     private final int[] inventoryItems, inventoryAmounts;
     private int selectedSlot;
     private final Inventory inventory; // the live save object; its arrays are inventoryItems/inventoryAmounts
@@ -155,7 +158,7 @@ public class PlayState extends GameState {
         fontTexture         = loadTexture("ui/game_font.png");
 
         grassRegions    = slice(grassTexture, 1, 3);
-        plantingRegions = slice(plowedTexture, 6, 3);
+        soilRegions     = slice(plowedTexture, 6, 3); // plowed_soil tiles 1..18, indexed by DualGridSoil
         collisionRegions = new TextureRegion[55];
         TextureRegion[] tg = slice(tallGrassTexture, 6, 3);
         TextureRegion[] wh = slice(wheatTexture, 6, 3);
@@ -226,9 +229,7 @@ public class PlayState extends GameState {
             animation = ws.currentAnimation;
             sCrops = ws.crops;
         } else {
-            GrassLayer fallback = new GrassLayer();
-            fallback.editLayer();
-            sGrass = fallback.getLayerArray();
+            sGrass = GrassGenerator.randomGrass(400, 220, TILE).data();
             sPlanting = new int[40][22];
             sCollision = new int[40][22];
             sInvItems = null;
@@ -240,11 +241,13 @@ public class PlayState extends GameState {
             selected = new int[]{32, 33, 34, 35};
             sCrops = null;
         }
-        collision = sCollision;
-        plantingLayer = new PlantingLayer(); // editLayer/formatLayer drive the tilling autotile logic
-        plantingLayer.setLayerArray(sPlanting);
-        planting = plantingLayer.getLayerArray();
-        grass = sGrass;
+        collisionLayer = new TileLayer(sCollision, TILE);
+        grassLayer = new TileLayer(sGrass, TILE);
+        // Soil is a per-cell tilled flag. Normalize any legacy save (old autotile tile-indices) to 0/1
+        // so the array now means "tilled?" — the dual grid derives the actual tiles at render time.
+        for (int[] column : sPlanting)
+            for (int r = 0; r < column.length; r++) column[r] = (column[r] != 0) ? 1 : 0;
+        soil = new DualGridSoil(new TileLayer(sPlanting, TILE));
         // Rebuild the live Inventory from saved primitives (it's no longer serialized directly).
         Inventory inv = new Inventory(sInvItems != null ? sInvItems.length : 10);
         inventoryItems = inv.getInventory();      // shared refs: mutating these mutates the live Inventory
@@ -297,7 +300,7 @@ public class PlayState extends GameState {
         CropType[] cropTypes = new CropType[cropRegistry.count()];
         for (int i = 0; i < cropTypes.length; i++) cropTypes[i] = cropRegistry.get(i);
         itemRegistry = new ItemRegistry(itemData.loadItemBlueprints(), cropTypes);
-        cropField = new CropField(collision.length, collision[0].length);
+        cropField = new CropField(collisionLayer.cols(), collisionLayer.rows());
         if (sCrops != null) restoreCrops(sCrops);
         Pixmap pm = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
         pm.setColor(Color.WHITE);
@@ -334,9 +337,9 @@ public class PlayState extends GameState {
         ws.invItems = inventoryItems;       // shared live refs — already current
         ws.invAmounts = inventoryAmounts;
         ws.invToggle = selectedSlot;
-        ws.collision = collision;
-        ws.planting = planting;
-        ws.grass = grass;
+        ws.collision = collisionLayer.data();
+        ws.planting = soil.grid().data(); // tilled flags (0/1)
+        ws.grass = grassLayer.data();
 
         // Snapshot the crop grid as plain CropSave records (no PlantedCrop/CropType, which hold textures).
         List<CropSave> crops = new ArrayList<>();
@@ -466,9 +469,9 @@ public class PlayState extends GameState {
 
     private boolean collidesAt(float px, float py) {
         float hx = px + HITBOX_OFF_X, hy = py + HITBOX_OFF_Y;
-        for (int j = 0; j < collision.length; j++) {
-            for (int i = 0; i < collision[j].length; i++) {
-                int v = collision[j][i];
+        for (int j = 0; j < collisionLayer.cols(); j++) {
+            for (int i = 0; i < collisionLayer.rows(); i++) {
+                int v = collisionLayer.get(j, i);
                 if (v < 1 || isNonCollidable(v)) continue;
                 if (hitboxOverlaps(hx, hy, j * TILE, i * TILE - TILE / 8f, TILE, TILE)) return true;
             }
@@ -488,10 +491,12 @@ public class PlayState extends GameState {
         return hx < bx + bw && hx + HITBOX_W > bx && hy < by + bh && hy + HITBOX_H > by;
     }
 
-    // A crop in cell (col,row) has a solid footprint box centered on its node corner. Single source
-    // for that geometry so collision and the pre-plant guard can never drift apart.
-    private float cropBoxX(int col) { return (col + 1) * TILE - CROP_COLL_W / 2f; }
-    private float cropBoxY(int row) { return (row + 1) * TILE - CROP_COLL_H / 2f; }
+    // A crop sits on cell (col,row): its root anchor is the cell centre, and its solid footprint box is
+    // centred there. Single source for that geometry so collision, the highlight, and the draw all agree.
+    private float cropRootX(int col) { return (col + 0.5f) * TILE; }
+    private float cropRootY(int row) { return (row + 0.5f) * TILE; }
+    private float cropBoxX(int col) { return cropRootX(col) - CROP_COLL_W / 2f; }
+    private float cropBoxY(int row) { return cropRootY(row) - CROP_COLL_H / 2f; }
 
     /** Would a crop planted in cell (col,row) immediately overlap the player where they stand now? */
     private boolean playerOverlapsCropCell(int col, int row) {
@@ -500,9 +505,9 @@ public class PlayState extends GameState {
     }
 
     private void resolveCollisions() {
-        for (int j = 0; j < collision.length; j++) {
-            for (int i = 0; i < collision[j].length; i++) {
-                int v = collision[j][i];
+        for (int j = 0; j < collisionLayer.cols(); j++) {
+            for (int i = 0; i < collisionLayer.rows(); i++) {
+                int v = collisionLayer.get(j, i);
                 if (v < 1 || isNonCollidable(v)) continue;
                 resolveBox(j * TILE, i * TILE - TILE / 8f, TILE, TILE);
             }
@@ -534,9 +539,9 @@ public class PlayState extends GameState {
 
     private void drawCollision(SpriteBatch batch, boolean inFront) {
         float feetY = playerY + HITBOX_OFF_Y;
-        for (int j = 0; j < collision.length; j++) {
-            for (int i = 0; i < collision[j].length; i++) {
-                int v = collision[j][i];
+        for (int j = 0; j < collisionLayer.cols(); j++) {
+            for (int i = 0; i < collisionLayer.rows(); i++) {
+                int v = collisionLayer.get(j, i);
                 if (v < 1 || v >= collisionRegions.length || collisionRegions[v] == null) continue;
                 float threshold = i * TILE + DEPTH_OFFSET;
                 boolean drawIt = inFront ? (feetY <= threshold) : (feetY >= threshold);
@@ -545,10 +550,10 @@ public class PlayState extends GameState {
         }
     }
 
-    private void drawArray(SpriteBatch batch, int[][] arr, TextureRegion[] regions) {
-        for (int j = 0; j < arr.length; j++) {
-            for (int i = 0; i < arr[j].length; i++) {
-                int v = arr[j][i];
+    private void drawArray(SpriteBatch batch, TileLayer layer, TextureRegion[] regions) {
+        for (int j = 0; j < layer.cols(); j++) {
+            for (int i = 0; i < layer.rows(); i++) {
+                int v = layer.get(j, i);
                 if (v >= 1 && v < regions.length && regions[v] != null) {
                     batch.draw(regions[v], j * TILE, i * TILE, TILE, TILE);
                 }
@@ -686,28 +691,15 @@ public class PlayState extends GameState {
         updateCamera();
     }
 
-    /** Resolve the plantable node under the mouse. A node sits at the shared corner of a 2x2 block of
-     *  tiles (index = the block's top-left tile) and is plantable when all four tiles are tilled soil
-     *  and the node is empty. */
+    /** Resolve the cell under the mouse. A cell is plantable when it's tilled soil, empty, and planting
+     *  there wouldn't immediately overlap the player. */
     private void updateHover() {
         mouseWorld.set(Gdx.input.getX(), Gdx.input.getY(), 0);
         camera.unproject(mouseWorld);
-        // The node whose center ((j+1)*TILE,(i+1)*TILE) the mouse falls nearest.
-        hoverCol = (int) Math.floor((mouseWorld.x + TILE / 2f) / TILE) - 1;
-        hoverRow = (int) Math.floor((mouseWorld.y + TILE / 2f) / TILE) - 1;
-        hoverPlantable = isPlantableNode(hoverCol, hoverRow) && cropField.isOpen(hoverCol, hoverRow)
+        hoverCol = soil.grid().colAtWorldX(mouseWorld.x);
+        hoverRow = soil.grid().rowAtWorldY(mouseWorld.y);
+        hoverPlantable = soil.isTilled(hoverCol, hoverRow) && cropField.isOpen(hoverCol, hoverRow)
                      && !playerOverlapsCropCell(hoverCol, hoverRow);
-    }
-
-    /** True when the 2x2 block of tiles with top-left (col,row) is entirely tilled soil. */
-    private boolean isPlantableNode(int col, int row) {
-        return tilledAt(col, row) && tilledAt(col + 1, row)
-                && tilledAt(col, row + 1) && tilledAt(col + 1, row + 1);
-    }
-
-    private boolean tilledAt(int col, int row) {
-        return col >= 0 && col < planting.length && row >= 0 && row < planting[0].length
-                && planting[col][row] >= 1;
     }
 
     /** Plant the selected seed (an inventory crop item) at the hovered tile, consuming one seed. */
@@ -750,17 +742,25 @@ public class PlayState extends GameState {
         if ("till".equals(effect)) performTill(dir);
     }
 
-    /** Till the soil the player faces, reusing PlantingLayer's editLayer (amount 400 = a 2x2 plot). */
+    /** Till the cell one step in front of the player, which the dual grid renders as a clean 4-tile
+     *  square. "In front" = the player's standing (hitbox) cell, offset one tile in the facing direction. */
     private void performTill(int dir) {
-        int px = (int) playerX, py = (int) playerY;
-        try {
-            switch (dir) { // 0 up, 1 left, 2 down, 3 right (offsets = Swing useTool * zoom 1.5)
-                case 0 -> plantingLayer.editLayer(px + 70, py + 48, 400);
-                case 1 -> plantingLayer.editLayer(px - 42, py + 156, 400);
-                case 2 -> plantingLayer.editLayer(px + 70, py + 192, 400);
-                case 3 -> plantingLayer.editLayer(px + 183, py + 156, 400);
-            }
-        } catch (Exception ignored) { /* tilling past the map edge — ignore OOB */ }
+        int col = soil.grid().colAtWorldX(playerX + HITBOX_OFF_X + HITBOX_W / 2f);
+        int row = soil.grid().rowAtWorldY(playerY + HITBOX_OFF_Y + HITBOX_H / 2f);
+        switch (dir) { // 0 up, 1 left, 2 down, 3 right (Y-down: up = -row)
+            case 0 -> row -= 1;
+            case 1 -> col -= 1;
+            case 2 -> row += 1;
+            case 3 -> col += 1;
+        }
+        if (!soil.grid().inBounds(col, row) || isBlockedByCollidable(col, row)) return;
+        soil.till(col, row);
+    }
+
+    /** True when a collidable (e.g. a bush) occupies the cell, so it can't be tilled. */
+    private boolean isBlockedByCollidable(int col, int row) {
+        int v = collisionLayer.get(col, row);
+        return v >= 1 && !isNonCollidable(v);
     }
 
     private void drawPlayer(SpriteBatch batch) {
@@ -777,8 +777,8 @@ public class PlayState extends GameState {
     public void render(SpriteBatch batch) {
         batch.setProjectionMatrix(camera.combined);
         batch.begin();
-        drawArray(batch, grass, grassRegions);
-        drawArray(batch, planting, plantingRegions);
+        drawArray(batch, grassLayer, grassRegions);
+        soil.render(batch, soilRegions);
         drawHighlight(batch);
         drawCrops(batch, false);     // crops rooted above the player -> behind
         drawCollision(batch, false); // bushes behind
@@ -800,8 +800,8 @@ public class PlayState extends GameState {
             if (crop == null || !crop.isMature(System.currentTimeMillis())) return;
             batch.setColor(1f, 0.95f, 0.3f, 0.35f);
         }
-        // A tile-sized highlight centered on the node (the middle of the 2x2 tilled block).
-        batch.draw(whiteRegion, hoverCol * TILE + TILE / 2f, hoverRow * TILE + TILE / 2f, TILE, TILE);
+        // A tile-sized highlight over the hovered cell.
+        batch.draw(whiteRegion, hoverCol * TILE, hoverRow * TILE, TILE, TILE);
         batch.setColor(Color.WHITE);
     }
 
@@ -813,9 +813,9 @@ public class PlayState extends GameState {
             for (int i = 0; i < cropField.rows(); i++) {
                 PlantedCrop crop = cropField.at(j, i);
                 if (crop == null) continue;
-                // Centered on the node ((j+1)*TILE,(i+1)*TILE), nudged 1/4 tile lower so the base sits right.
-                // The post-harvest hole frame sits an extra 1/8 tile lower to line up with the others.
-                float cropTop = i * TILE - TILE + TILE / 4f;
+                // Centered on the cell, with the root anchor (cell center) sitting 1/4 tile above the
+                // sprite's bottom. The post-harvest hole frame sits an extra 1/8 tile lower to line up.
+                float cropTop = cropRootY(i) - (CROP_H - TILE / 4f);
                 float y = cropTop + (crop.harvested ? TILE / 8f : 0f);
                 // Depth ground-line: the player goes in front of the crop once their feet pass ~2/3 down
                 // the 2-tile-tall sprite. This is the old CropsLayer mask (feetY <= column*TILE + 100*zoom).
@@ -823,7 +823,7 @@ public class PlayState extends GameState {
                 boolean drawIt = inFront ? (feetY <= threshold) : (feetY >= threshold);
                 if (!drawIt) continue;
                 TextureRegion r = crop.type.stage(crop.stage(now));
-                batch.draw(r, j * TILE + TILE / 2f, y, CROP_W, CROP_H);
+                batch.draw(r, cropRootX(j) - CROP_W / 2f, y, CROP_W, CROP_H);
             }
         }
     }
