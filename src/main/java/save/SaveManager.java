@@ -1,5 +1,7 @@
 package save;
 
+import core.Log;
+
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -35,7 +37,7 @@ public final class SaveManager {
             return fmt.read(new ByteArrayInputStream(bytes));
         } catch (Exception e) {
             // Corrupt/unreadable save: treat as "no save" so the caller starts fresh rather than crashing.
-            System.err.println("SaveManager: could not read " + path + " (" + e.getMessage() + ")");
+            Log.warn("SaveManager", "could not read save at " + path + "; starting fresh", e);
             return null;
         }
     }
@@ -47,7 +49,7 @@ public final class SaveManager {
         try (OutputStream out = new FileOutputStream(path)) {
             BINARY.write(data, out);
         } catch (IOException e) {
-            e.printStackTrace();
+            Log.error("SaveManager", "could not write save to " + path, e);
         }
     }
 

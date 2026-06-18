@@ -6,6 +6,7 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.math.Matrix4;
 import core.Assets;
+import core.Log;
 import items.ItemRegistry;
 import render.TextureSlicer;
 
@@ -89,7 +90,9 @@ public final class InventoryHud {
             Texture t = assets.get(path); // owned + deduped by the Assets cache
             region = new TextureRegion(t);
             region.flip(false, true);
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            // Missing/unreadable icon art — cache the null so we don't retry, but surface which one.
+            Log.warn("InventoryHud", "no icon for item " + id + " (" + path + ")", e);
         }
         iconCache.put(id, region);
         return region;

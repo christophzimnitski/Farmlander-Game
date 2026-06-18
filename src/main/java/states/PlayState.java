@@ -8,6 +8,7 @@ import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import core.Assets;
 import core.GameState;
 import core.GameStateManager;
+import core.Log;
 import crops.CropField;
 import crops.CropGeometry;
 import crops.CropRegistry;
@@ -139,7 +140,7 @@ public class PlayState extends GameState {
 
         // Tool Q-actions are data-driven (data/tool_actions.json), behind a swappable ToolActionDataSource
         // seam; a missing/unparseable file falls back to the built-in catalog at load (see ProbeLoader).
-        for (ToolActionBlueprint blueprint : ProbeLoader.loadOrFallback(
+        for (ToolActionBlueprint blueprint : ProbeLoader.loadOrFallback("tool_actions.json",
                 () -> new JsonToolActionDataSource(Gdx.files.classpath("data/tool_actions.json")),
                 ToolActionDataSource::loadToolActionBlueprints,
                 DefaultToolActionDataSource::new)) buildToolAction(blueprint);
@@ -209,7 +210,7 @@ public class PlayState extends GameState {
         cropsTexture = loadTexture("tilesets/crops.png");
         // Crop blueprints come from data/crops.json behind a swappable CropDataSource seam; a missing or
         // unparseable file falls back to the built-in catalog at load (see ProbeLoader).
-        cropRegistry = new CropRegistry(cropsTexture, ProbeLoader.loadOrFallback(
+        cropRegistry = new CropRegistry(cropsTexture, ProbeLoader.loadOrFallback("crops.json",
                 () -> new JsonCropDataSource(Gdx.files.classpath("data/crops.json")),
                 CropDataSource::loadCropBlueprints,
                 DefaultCropDataSource::new), DEFAULT_STAGE_MILLIS);
@@ -217,7 +218,7 @@ public class PlayState extends GameState {
         // derived from the crop catalog so their names aren't duplicated out of crops.json.
         CropType[] cropTypes = new CropType[cropRegistry.count()];
         for (int i = 0; i < cropTypes.length; i++) cropTypes[i] = cropRegistry.get(i);
-        itemRegistry = new ItemRegistry(ProbeLoader.loadOrFallback(
+        itemRegistry = new ItemRegistry(ProbeLoader.loadOrFallback("items.json",
                 () -> new JsonItemDataSource(Gdx.files.classpath("data/items.json")),
                 ItemDataSource::loadItemBlueprints,
                 DefaultItemDataSource::new), cropTypes);
@@ -351,7 +352,8 @@ public class PlayState extends GameState {
     public void dispose() {
         // Save on a clean exit (explicit now — no longer hidden inside a lifecycle method). Never let a
         // save error block resource cleanup on shutdown.
-        try { worldPersistence.save(selectedSlot); } catch (Exception e) { e.printStackTrace(); }
+        try { worldPersistence.save(selectedSlot); }
+        catch (Exception e) { Log.error("PlayState", "save on exit failed", e); }
         assets.dispose();        // frees every classpath texture (tilesets, player sheets, UI, crops, icons)
         worldRenderer.dispose(); // frees the procedurally-generated highlight texture (not in the cache)
     }

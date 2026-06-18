@@ -1,5 +1,7 @@
 package data;
 
+import core.Log;
+
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -15,15 +17,18 @@ public final class ProbeLoader {
     private ProbeLoader() {}
 
     /**
+     * @param what     a short label for what's being loaded (e.g. "crops.json"), used only in the warning
      * @param primary  builds the primary source (e.g. the JSON-backed data source)
      * @param load     pulls the parsed blueprints from a source (forces the parse, so it trips the fallback)
      * @param fallback builds the built-in source used when the primary can't be constructed or parsed
      */
-    public static <S, R> R loadOrFallback(Supplier<? extends S> primary, Function<S, R> load,
+    public static <S, R> R loadOrFallback(String what, Supplier<? extends S> primary, Function<S, R> load,
                                           Supplier<? extends S> fallback) {
         try {
             return load.apply(primary.get());
         } catch (Exception e) {
+            // Don't let a broken/missing data file fail silently — a fallback looks correct in-game.
+            Log.warn("ProbeLoader", "could not load " + what + "; using built-in defaults", e);
             return load.apply(fallback.get());
         }
     }

@@ -1,5 +1,7 @@
 package utilz;
 
+import core.Log;
+
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -48,7 +50,7 @@ public class LoadSave {
                 assert is != null;
                 is.close();
             } catch (IOException e) {
-                e.printStackTrace();
+                Log.warn("LoadSave", "failed to close stream for " + fileName, e);
             }
         }
         return img;
