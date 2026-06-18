@@ -12,10 +12,10 @@ import crops.CropField;
 import crops.CropGeometry;
 import crops.CropRegistry;
 import crops.CropType;
-import crops.PlantedCrop;
 import crops.data.CropDataSource;
 import crops.data.DefaultCropDataSource;
 import crops.data.JsonCropDataSource;
+import data.ProbeLoader;
 import entities.Inventory;
 import entities.PlayerCharacter;
 import farm.FarmInteraction;
@@ -29,6 +29,7 @@ import render.TextureSlicer;
 import render.WorldRenderer;
 import save.CropSave;
 import save.SaveManager;
+import save.WorldPersistence;
 import save.WorldSave;
 import tools.ToolAction;
 import tools.ToolActionSystem;
@@ -42,9 +43,6 @@ import world.GrassGenerator;
 import world.TileLayer;
 
 import static utilz.Constants.PlayerActionConstants.playerAnimationArrays;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Renders your real saved world (grass + tilled soil + collidables, depth-sorted
@@ -88,6 +86,7 @@ public class PlayState extends GameState {
     private final ItemRegistry itemRegistry;
     private final CropField cropField;
     private FarmInteraction farmInteraction; // hover targeting + plant/harvest/till
+    private WorldPersistence worldPersistence; // save snapshot + crop restore
 
     // Data-driven tool Q-actions, indexed by toolIndex (null = no action for that tool). ToolActionSystem
     // owns the live animation/effect state; the array is filled by buildToolAction during construction.
@@ -138,18 +137,12 @@ public class PlayState extends GameState {
             }
         }
 
-        // Tool Q-actions are data-driven (data/tool_actions.json via libGDX Json), behind the same
-        // swappable ToolActionDataSource seam as crops. The probe forces a parse now so a
-        // missing/unparseable file falls back to the built-in catalog here, not mid-game.
-        ToolActionDataSource toolData;
-        try {
-            ToolActionDataSource json = new JsonToolActionDataSource(Gdx.files.classpath("data/tool_actions.json"));
-            json.loadToolActionBlueprints(); // probe
-            toolData = json;
-        } catch (Exception e) {
-            toolData = new DefaultToolActionDataSource();
-        }
-        for (ToolActionBlueprint blueprint : toolData.loadToolActionBlueprints()) buildToolAction(blueprint);
+        // Tool Q-actions are data-driven (data/tool_actions.json), behind a swappable ToolActionDataSource
+        // seam; a missing/unparseable file falls back to the built-in catalog at load (see ProbeLoader).
+        for (ToolActionBlueprint blueprint : ProbeLoader.loadOrFallback(
+                () -> new JsonToolActionDataSource(Gdx.files.classpath("data/tool_actions.json")),
+                ToolActionDataSource::loadToolActionBlueprints,
+                DefaultToolActionDataSource::new)) buildToolAction(blueprint);
         // At the effect frame, the system calls back into applyActionEffect (today: till).
         toolActionSystem = new ToolActionSystem(toolActions, ANIM_FRAME_TIME, this::applyActionEffect);
 
@@ -214,83 +207,30 @@ public class PlayState extends GameState {
         // Crop subsystem: catalog from crops.png, an empty field sized to the world, and a 1x1
         // white pixel for the hover highlight (kept on the main SpriteBatch — no ShapeRenderer).
         cropsTexture = loadTexture("tilesets/crops.png");
-        // Crop blueprints come from data (data/crops.json via libGDX Json), behind a swappable
-        // CropDataSource seam. If the file is missing/unparseable, fall back to the built-in catalog
-        // so crops never break.
-        CropDataSource cropData;
-        try {
-            CropDataSource json = new JsonCropDataSource(Gdx.files.classpath("data/crops.json"));
-            json.loadCropBlueprints(); // probe: force a parse now so a bad file trips the fallback here
-            cropData = json;
-        } catch (Exception e) {
-            cropData = new DefaultCropDataSource();
-        }
-        cropRegistry = new CropRegistry(cropsTexture, cropData.loadCropBlueprints(), DEFAULT_STAGE_MILLIS);
-        // ItemDataSource seam (same probe-load + fallback pattern as crops/tools). The data file owns
-        // the tools; crop seed/produce items are derived from the crop catalog so their names aren't
-        // duplicated out of crops.json.
-        ItemDataSource itemData;
-        try {
-            ItemDataSource json = new JsonItemDataSource(Gdx.files.classpath("data/items.json"));
-            json.loadItemBlueprints(); // probe: force a parse now so a bad file trips the fallback here
-            itemData = json;
-        } catch (Exception e) {
-            itemData = new DefaultItemDataSource();
-        }
+        // Crop blueprints come from data/crops.json behind a swappable CropDataSource seam; a missing or
+        // unparseable file falls back to the built-in catalog at load (see ProbeLoader).
+        cropRegistry = new CropRegistry(cropsTexture, ProbeLoader.loadOrFallback(
+                () -> new JsonCropDataSource(Gdx.files.classpath("data/crops.json")),
+                CropDataSource::loadCropBlueprints,
+                DefaultCropDataSource::new), DEFAULT_STAGE_MILLIS);
+        // Items: same probe-load + fallback. The data file owns the tools; crop seed/produce items are
+        // derived from the crop catalog so their names aren't duplicated out of crops.json.
         CropType[] cropTypes = new CropType[cropRegistry.count()];
         for (int i = 0; i < cropTypes.length; i++) cropTypes[i] = cropRegistry.get(i);
-        itemRegistry = new ItemRegistry(itemData.loadItemBlueprints(), cropTypes);
+        itemRegistry = new ItemRegistry(ProbeLoader.loadOrFallback(
+                () -> new JsonItemDataSource(Gdx.files.classpath("data/items.json")),
+                ItemDataSource::loadItemBlueprints,
+                DefaultItemDataSource::new), cropTypes);
         inventoryHud = new InventoryHud(inventoryBarTexture, toggleTexture, fontTexture, itemRegistry, assets);
         cropField = new CropField(collisionLayer.cols(), collisionLayer.rows());
         collisionResolver = new CollisionResolver(collisionLayer, cropField, cropGeometry, TILE, COLLISION_ERR);
-        if (sCrops != null) restoreCrops(sCrops);
+        worldPersistence = new WorldPersistence(collisionLayer, grassLayer, soil, cropField, player,
+                inventoryItems, inventoryAmounts, cropRegistry);
+        worldPersistence.restoreCrops(sCrops);
         worldRenderer = new WorldRenderer(grassLayer, soil, collisionLayer, cropField, cropGeometry, TILE,
                 grassRegions, soilRegions, collisionRegions);
         farmInteraction = new FarmInteraction(soil, cropField, cropRegistry, itemRegistry, cropGeometry,
                 collisionResolver, gameCamera, player, inventoryItems, inventoryAmounts);
-    }
-
-    /** Repopulate the crop field from the crops read out of the save. */
-    private void restoreCrops(CropSave[] crops) {
-        for (CropSave s : crops) {
-            CropType type = cropRegistry.get(s.type);
-            if (type == null) continue; // a crop id that no longer exists in the catalog — drop it
-            cropField.plant(s.col, s.row, type, s.planted);
-            PlantedCrop c = cropField.at(s.col, s.row);
-            if (c != null) c.harvested = s.harvested;
-        }
-    }
-
-    /**
-     * Persist the world to the save file via the {@link SaveManager}/{@link save.SaveFormat} seam (binary).
-     * Builds a plain {@link WorldSave} snapshot — no engine objects, no Java serialization. Called on a
-     * clean exit (see {@link #dispose}); a SIGKILL (e.g. the dev pkill-relaunch) skips it, which is fine
-     * — only deliberate quits should save.
-     */
-    private void saveGame() {
-        WorldSave ws = new WorldSave();
-        ws.playerX = player.x();
-        ws.playerY = player.y();
-        ws.currentAnimation = player.currentAnimation();
-        ws.walkActions = player.walkActions();
-        ws.invItems = inventoryItems;       // shared live refs — already current
-        ws.invAmounts = inventoryAmounts;
-        ws.invToggle = selectedSlot;
-        ws.collision = collisionLayer.data();
-        ws.planting = soil.grid().data(); // tilled flags (0/1)
-        ws.grass = grassLayer.data();
-
-        // Snapshot the crop grid as plain CropSave records (no PlantedCrop/CropType, which hold textures).
-        List<CropSave> crops = new ArrayList<>();
-        for (int j = 0; j < cropField.cols(); j++)
-            for (int i = 0; i < cropField.rows(); i++) {
-                PlantedCrop c = cropField.at(j, i);
-                if (c == null) continue;
-                crops.add(new CropSave(j, i, c.type.index, c.plantedAt, c.harvested));
-            }
-        ws.crops = crops.toArray(new CropSave[0]);
-
-        SaveManager.save(ws, SaveManager.SAVE_FILE);
     }
 
     /** Load a classpath texture with Nearest filtering (crisp pixel art, no color softening). */
@@ -409,8 +349,9 @@ public class PlayState extends GameState {
 
     @Override
     public void dispose() {
-        // Persist first, but never let a save error block resource cleanup on shutdown.
-        try { saveGame(); } catch (Exception e) { e.printStackTrace(); }
+        // Save on a clean exit (explicit now — no longer hidden inside a lifecycle method). Never let a
+        // save error block resource cleanup on shutdown.
+        try { worldPersistence.save(selectedSlot); } catch (Exception e) { e.printStackTrace(); }
         assets.dispose();        // frees every classpath texture (tilesets, player sheets, UI, crops, icons)
         worldRenderer.dispose(); // frees the procedurally-generated highlight texture (not in the cache)
     }
