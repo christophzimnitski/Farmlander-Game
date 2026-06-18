@@ -81,15 +81,19 @@ public final class FarmInteraction {
         crop.harvested = true; // now renders the hole frame; cell is open for replanting
     }
 
-    /** Till the cell one step in front of the player, which the dual grid renders as a clean 4-tile
-     *  square. "In front" = the player's standing (hitbox) cell, offset one tile in the facing direction. */
+    /** Till the cell one step in front of the player, which the dual grid renders as a clean 4-tile square.
+     *  "In front" = the player's standing (hitbox-center) cell, offset one tile in the facing direction —
+     *  except <b>down</b>, which targets the cell at the feet (the hitbox <em>bottom</em> edge): the hitbox is
+     *  only half a tile tall and sits at the very bottom of the sprite, so a full cell below its center
+     *  overshoots the feet by up to a tile. Using the bottom edge lands the soil snug at the feet (it drops
+     *  the target a row only when that gap would be large, matching up/left/right's tightness). */
     public void performTill(int dir) {
         int col = soil.grid().colAtWorldX(player.hitboxCenterX());
         int row = soil.grid().rowAtWorldY(player.hitboxCenterY());
         switch (dir) { // 0 up, 1 left, 2 down, 3 right (Y-down: up = -row)
             case 0 -> row -= 1;
             case 1 -> col -= 1;
-            case 2 -> row += 1;
+            case 2 -> row = soil.grid().rowAtWorldY(player.hitboxY() + player.hitboxH());
             case 3 -> col += 1;
         }
         if (!soil.grid().inBounds(col, row) || collisionResolver.isSolid(col, row)) return;
