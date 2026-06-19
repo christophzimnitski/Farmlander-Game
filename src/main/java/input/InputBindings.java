@@ -60,4 +60,21 @@ public final class InputBindings {
     public boolean isPrimaryPointerJustPressed() {
         return Gdx.input.isButtonJustPressed(Input.Buttons.LEFT);
     }
+
+    /** Is the primary (left) pointer button currently held? Drives inventory drag-and-drop (press/release
+     *  edges are derived by the caller from this across frames). */
+    public boolean isPrimaryPointerDown() {
+        return Gdx.input.isButtonPressed(Input.Buttons.LEFT);
+    }
+
+    /** Is either Shift held? Modifies inventory moves: whole-stack vs single-item, and stack quick-transfer. */
+    public boolean isShiftDown() {
+        return Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT);
+    }
+
+    /** Pointer X in screen pixels (left origin) — matches the Y-down HUD camera, so it indexes HUD slots directly. */
+    public int pointerX() { return Gdx.input.getX(); }
+
+    /** Pointer Y in screen pixels (top origin) — matches the Y-down HUD camera. */
+    public int pointerY() { return Gdx.input.getY(); }
 }

@@ -130,6 +130,55 @@ public final class InventoryHud {
         whiteTexture.dispose();
     }
 
+    // --- layout / hit-testing (shared by render() and the mouse interaction) ---
+
+    /** The HUD layout in screen pixels, recomputed each frame from the window size. Reused (single-threaded,
+     *  read immediately) to avoid a per-frame allocation. {@code render()} and {@link #slotAt} must agree. */
+    private static final class Geo { float invX, invY, invW, invH, slot, gap; }
+    private final Geo geo = new Geo();
+
+    private Geo geom() {
+        float w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
+        geo.invW = 1200f;
+        geo.invH = geo.invW / 10f;
+        geo.invX = w / 2f - geo.invW / 2f;
+        geo.invY = h * 7f / 8f;
+        geo.slot = geo.invW / 10f;
+        geo.gap = geo.invH; // one-tile gap between hotbar and bag
+        return geo;
+    }
+
+    private static boolean within(float px, float py, float x, float y, float w, float h) {
+        return px >= x && px < x + w && py >= y && py < y + h;
+    }
+
+    /**
+     * The inventory slot index under a screen-pixel point, or {@code -1} for the dim backdrop / outside. The
+     * hotbar (first {@link Inventory#HOTBAR} slots) is always hit-testable; the bag rows only when {@code open}.
+     */
+    public int slotAt(float mx, float my, int itemsLength, boolean open) {
+        Geo g = geom();
+        if (within(mx, my, g.invX, g.invY, g.invW, g.invH)) {
+            int col = (int) ((mx - g.invX) / g.slot);
+            if (col >= 0 && col < Inventory.HOTBAR) return col;
+        }
+        if (open) {
+            int bagSlots = Math.max(0, itemsLength - Inventory.HOTBAR);
+            int bagRows = (bagSlots + Inventory.HOTBAR - 1) / Inventory.HOTBAR;
+            for (int row = 0; row < bagRows; row++) {
+                float rowY = g.invY - (row + 1) * g.invH - g.gap;
+                if (within(mx, my, g.invX, rowY, g.invW, g.invH)) {
+                    int col = (int) ((mx - g.invX) / g.slot);
+                    if (col >= 0 && col < Inventory.HOTBAR) {
+                        int idx = Inventory.HOTBAR + row * Inventory.HOTBAR + col;
+                        if (idx < itemsLength) return idx;
+                    }
+                }
+            }
+        }
+        return -1;
+    }
+
     /** HUD icon for an item, loaded on demand (cached, null cached too so we don't retry). The path comes
      *  from the ItemRegistry (which applies the food/<id>.png convention for crop items). */
     private TextureRegion icon(int id) {
