@@ -92,6 +92,7 @@ public class PlayState extends GameState {
     private FarmInteraction farmInteraction; // hover targeting + plant/harvest/till
     private WorldPersistence worldPersistence; // save snapshot + crop restore
     private float autosaveTimer = 0; // counts up to Config.AUTOSAVE_INTERVAL, then saves
+    private boolean inventoryOpen = false; // TAB toggles the inventory popup; world is frozen while it's open
 
     // Data-driven tool Q-actions, indexed by toolIndex (null = no action for that tool). ToolActionSystem
     // owns the live animation/effect state; the array is filled by buildToolAction during construction.
@@ -241,6 +242,7 @@ public class PlayState extends GameState {
                 grassRegions, soilRegions, collisionRegions);
         farmInteraction = new FarmInteraction(soil, cropField, cropRegistry, itemRegistry, cropGeometry,
                 collisionResolver, gameCamera, player, inventoryItems, inventoryAmounts);
+        syncSelectedTool(); // initial held tool reflects the selected hotbar slot
     }
 
     /** Load a classpath texture with Nearest filtering (crisp pixel art, no color softening). */
@@ -300,6 +302,13 @@ public class PlayState extends GameState {
         }
     }
 
+    /** Sync the player's active tool to the selected hotbar item: a tool item activates its animation set,
+     *  anything else (a seed or an empty slot) leaves the player empty-handed. This is how tools are chosen
+     *  now — by selecting them in the hotbar. */
+    private void syncSelectedTool() {
+        player.setTool(itemRegistry.toolIndexFor(inventoryItems[selectedSlot]));
+    }
+
     /** Would the player's feet hitbox collide if shifted by (dx,dy) from where it is now? */
     private boolean wouldCollide(float dx, float dy) {
         return collisionResolver.collidesAt(player.hitboxX() + dx, player.hitboxY() + dy,
@@ -310,6 +319,11 @@ public class PlayState extends GameState {
     public void update(float delta) {
         if (input.isDown(InputAction.QUIT)) Gdx.app.exit();
         autosave(delta); // periodic save so a crash/SIGKILL doesn't lose progress (exit-only save isn't enough)
+
+        // TAB toggles the inventory popup. While it's open the world is a frozen, dimmed backdrop (a modal):
+        // no movement, no tool use, no planting — only closing it again.
+        if (input.isJustPressed(InputAction.OPEN_INVENTORY)) inventoryOpen = !inventoryOpen;
+        if (inventoryOpen) { updateCamera(); return; }
 
         // A tool Q-action is playing out: animate it (firing its effect at the effect frame), no movement.
         if (toolActionSystem.isActive()) {
@@ -342,10 +356,10 @@ public class PlayState extends GameState {
 
         collisionResolver.resolve(player);
 
-        // Inventory selector (1/3) and tool cycling (2) — discrete presses.
-        if (input.isJustPressed(InputAction.SELECT_PREV)) selectedSlot = Math.max(0, selectedSlot - 1);
-        if (input.isJustPressed(InputAction.SELECT_NEXT)) selectedSlot = Math.min(9, selectedSlot + 1);
-        if (input.isJustPressed(InputAction.CYCLE_TOOL)) player.cycleTool();
+        // Hotbar selection (1/3). Changing the selected slot re-syncs the held tool: tool switching now
+        // happens through inventory selection, not a dedicated cycle key.
+        if (input.isJustPressed(InputAction.SELECT_PREV)) { selectedSlot = Math.max(0, selectedSlot - 1); syncSelectedTool(); }
+        if (input.isJustPressed(InputAction.SELECT_NEXT)) { selectedSlot = Math.min(Inventory.HOTBAR - 1, selectedSlot + 1); syncSelectedTool(); }
 
         // Facing follows ACTUAL movement: opposing keys keep the current facing; horizontal wins diagonals.
         player.setFacingFromMotion(ix, iy);

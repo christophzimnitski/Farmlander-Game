@@ -13,10 +13,10 @@ public enum InputAction {
     MOVE_DOWN,
     MOVE_LEFT,
     MOVE_RIGHT,
-    SELECT_PREV,   // previous inventory slot
-    SELECT_NEXT,   // next inventory slot
-    CYCLE_TOOL,    // switch the held tool
-    USE_TOOL,      // trigger the held tool's action (e.g. till)
-    HARVEST,       // harvest the crop under the cursor
-    QUIT           // exit the game
+    SELECT_PREV,     // previous hotbar slot
+    SELECT_NEXT,     // next hotbar slot
+    OPEN_INVENTORY,  // toggle the inventory popup (the 3x10 bag over the hotbar)
+    USE_TOOL,        // trigger the held tool's action (e.g. till)
+    HARVEST,         // harvest the crop under the cursor
+    QUIT             // exit the game
 }

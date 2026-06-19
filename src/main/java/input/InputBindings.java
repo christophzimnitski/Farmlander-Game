@@ -20,18 +20,18 @@ import java.util.Map;
 public final class InputBindings {
     private final Map<InputAction, int[]> keys = new EnumMap<>(InputAction.class);
 
-    /** Construct with the default keyboard layout (arrows + WASD to move; 1/3 select; 2 cycle; Q/E/Esc). */
+    /** Construct with the default keyboard layout (arrows + WASD to move; 1/3 select; Tab inventory; Q/E/Esc). */
     public InputBindings() {
-        bind(InputAction.MOVE_UP,     Input.Keys.UP,    Input.Keys.W);
-        bind(InputAction.MOVE_DOWN,   Input.Keys.DOWN,  Input.Keys.S);
-        bind(InputAction.MOVE_LEFT,   Input.Keys.LEFT,  Input.Keys.A);
-        bind(InputAction.MOVE_RIGHT,  Input.Keys.RIGHT, Input.Keys.D);
-        bind(InputAction.SELECT_PREV, Input.Keys.NUM_1);
-        bind(InputAction.SELECT_NEXT, Input.Keys.NUM_3);
-        bind(InputAction.CYCLE_TOOL,  Input.Keys.NUM_2);
-        bind(InputAction.USE_TOOL,    Input.Keys.Q);
-        bind(InputAction.HARVEST,     Input.Keys.E);
-        bind(InputAction.QUIT,        Input.Keys.ESCAPE);
+        bind(InputAction.MOVE_UP,        Input.Keys.UP,    Input.Keys.W);
+        bind(InputAction.MOVE_DOWN,      Input.Keys.DOWN,  Input.Keys.S);
+        bind(InputAction.MOVE_LEFT,      Input.Keys.LEFT,  Input.Keys.A);
+        bind(InputAction.MOVE_RIGHT,     Input.Keys.RIGHT, Input.Keys.D);
+        bind(InputAction.SELECT_PREV,    Input.Keys.NUM_1);
+        bind(InputAction.SELECT_NEXT,    Input.Keys.NUM_3);
+        bind(InputAction.OPEN_INVENTORY, Input.Keys.TAB);
+        bind(InputAction.USE_TOOL,       Input.Keys.Q);
+        bind(InputAction.HARVEST,        Input.Keys.E);
+        bind(InputAction.QUIT,           Input.Keys.ESCAPE);
     }
 
     /** Rebind an action to one or more physical keys ({@code Input.Keys} codes), replacing its current keys. */

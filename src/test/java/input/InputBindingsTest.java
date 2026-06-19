@@ -29,6 +29,12 @@ class InputBindingsTest {
     }
 
     @Test
+    void inventoryTogglesWithTabByDefault() {
+        InputBindings bindings = new InputBindings();
+        assertArrayEquals(new int[]{Input.Keys.TAB}, bindings.keysFor(InputAction.OPEN_INVENTORY));
+    }
+
+    @Test
     void rebindReplacesKeys() {
         InputBindings bindings = new InputBindings();
         bindings.bind(InputAction.USE_TOOL, Input.Keys.SPACE, Input.Keys.ENTER);
