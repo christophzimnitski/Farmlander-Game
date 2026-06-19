@@ -393,9 +393,13 @@ public class PlayState extends GameState {
         player.stepWalk(delta, ix != 0 || iy != 0);
 
         farmInteraction.updateHover();
-        // Left-click a plantable tile to sow the selected seed; HARVEST (E) reaps a mature crop under the mouse.
-        if (input.isPrimaryPointerJustPressed() && farmInteraction.hoverPlantable())
-            farmInteraction.plantAtHover(selectedSlot);
+        // Left-click: clicking a hotbar slot (the on-screen bar) selects it for use, re-syncing the held tool;
+        // otherwise it sows the selected seed on a plantable tile. HARVEST (E) reaps a mature crop under the mouse.
+        if (input.isPrimaryPointerJustPressed()) {
+            int clickedSlot = inventoryHud.slotAt(input.pointerX(), input.pointerY(), inventoryItems.length, false);
+            if (clickedSlot >= 0) { selectedSlot = clickedSlot; syncSelectedTool(); }
+            else if (farmInteraction.hoverPlantable()) farmInteraction.plantAtHover(selectedSlot);
+        }
         if (input.isJustPressed(InputAction.HARVEST)) farmInteraction.harvestAtHover();
 
         updateCamera();
@@ -430,7 +434,8 @@ public class PlayState extends GameState {
                              farmInteraction.hoverCol(), farmInteraction.hoverRow(),
                              farmInteraction.hoverPlantable());
         inventoryHud.render(batch, gameCamera.hudCombined(), inventoryItems, inventoryAmounts, selectedSlot,
-                            inventoryOpen, inventoryInteraction.draggedItemId(),
+                            inventoryOpen, inventoryInteraction.draggedItemId(), inventoryInteraction.draggedAmount(),
+                            inventoryInteraction.draggedSourceSlot(),
                             inventoryInteraction.cursorX(), inventoryInteraction.cursorY());
     }
 

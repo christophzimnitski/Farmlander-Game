@@ -29,6 +29,7 @@ public final class InventoryInteraction {
     private boolean dragging = false;  // a non-empty slot is currently picked up
     private int pressSlot = -1;        // slot the press landed on (-1 = dim/outside)
     private boolean pressShift = false; // Shift state captured at press time
+    private int dragAmount = 0;        // units picked up: 1 for a plain drag, the whole stack for Shift
     private float cursorX, cursorY;
 
     public InventoryInteraction(int[] items, int[] amounts, InventoryHud hud, InputBindings input) {
@@ -53,6 +54,9 @@ public final class InventoryInteraction {
             pressSlot = hud.slotAt(cursorX, cursorY, items.length, open);
             pressShift = input.isShiftDown();
             dragging = pressSlot >= 0 && items[pressSlot] != 0;
+            // What's "in hand": a plain drag carries one item, a Shift-drag the whole stack. Used to mask the
+            // source slot so the picked-up units don't also show there (no duplicate sprite).
+            dragAmount = dragging ? (pressShift ? amounts[pressSlot] : 1) : 0;
         } else if (!down && wasDown) { // release edge
             int releaseSlot = hud.slotAt(cursorX, cursorY, items.length, open);
             if (pressSlot < 0 && releaseSlot < 0) {
@@ -80,6 +84,12 @@ public final class InventoryInteraction {
     /** The item id currently being dragged (for the floating cursor icon), or {@code 0} when not dragging. */
     public int draggedItemId() { return (dragging && pressSlot >= 0) ? items[pressSlot] : 0; }
 
+    /** How many units are in hand (1 for a plain drag, the whole stack for a Shift-drag), or {@code 0}. */
+    public int draggedAmount() { return dragging ? dragAmount : 0; }
+
+    /** The slot the drag started from (so the HUD can hide the picked-up units there), or {@code -1}. */
+    public int draggedSourceSlot() { return dragging ? pressSlot : -1; }
+
     public float cursorX() { return cursorX; }
 
     public float cursorY() { return cursorY; }
@@ -88,6 +98,7 @@ public final class InventoryInteraction {
     public void cancel() {
         dragging = false;
         pressSlot = -1;
+        dragAmount = 0;
         wasDown = false;
     }
 

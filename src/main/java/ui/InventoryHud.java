@@ -60,7 +60,7 @@ public final class InventoryHud {
      * dimmed and the bag — the remaining slots as a 3×10 grid — is drawn stacked directly above the hotbar.
      */
     public void render(SpriteBatch batch, Matrix4 hudCombined, int[] items, int[] amounts, int selectedSlot,
-                       boolean open, int dragItemId, float dragX, float dragY) {
+                       boolean open, int dragItemId, int dragAmount, int dragSourceSlot, float dragX, float dragY) {
         float w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
         float invW = 1200, invH = invW / 10f; // 120
         float invX = w / 2f - invW / 2f, invY = h * 7f / 8f;
@@ -78,11 +78,12 @@ public final class InventoryHud {
             batch.setColor(Color.WHITE);
         }
         // Bars: the hotbar always; the bag rows (stacked above, lifted by a one-tile gap so the grid reads as
-        // a separate panel rather than a fourth hotbar row) only when open.
+        // a separate panel rather than a fourth hotbar row) only when open. Bag row 0 (slots 10..) is the TOP
+        // row — the grid reads top-to-bottom, left-to-right — so the bottom-most row sits one gap above the bar.
         batch.draw(barRegion, invX, invY, invW, invH);
         if (open) {
             for (int row = 0; row < bagRows; row++) {
-                batch.draw(barRegion, invX, invY - (row + 1) * invH - gap, invW, invH);
+                batch.draw(barRegion, invX, bagRowY(invY, invH, gap, bagRows, row), invW, invH);
             }
         }
         // Selection highlight on the selected slot's cell — a hotbar slot always, or (when open) a bag slot.
@@ -92,32 +93,50 @@ public final class InventoryHud {
             } else if (open) {
                 int bagIdx = selectedSlot - Inventory.HOTBAR;
                 int r = bagIdx / Inventory.HOTBAR, col = bagIdx % Inventory.HOTBAR;
-                batch.draw(toggleRegion, invX + col * slot, invY - (r + 1) * invH - gap, slot, invH);
+                batch.draw(toggleRegion, invX + col * slot, bagRowY(invY, invH, gap, bagRows, r), slot, invH);
             }
         }
-        // Slot contents: hotbar always, bag when open.
+        // Slot contents: hotbar always, bag when open. The drag source slot hides its picked-up units so the
+        // dragged item shows only at the cursor (no duplicate sprite).
         for (int i = 0; i < Inventory.HOTBAR && i < items.length; i++) {
-            drawSlot(batch, items[i], amounts[i], invX + i * slot, invY, w, h, invW, invH, slot);
+            drawHeldAware(batch, items, amounts, i, dragSourceSlot, dragAmount,
+                          invX + i * slot, invY, w, h, invW, invH, slot);
         }
         if (open) {
             for (int row = 0; row < bagRows; row++) {
-                float rowY = invY - (row + 1) * invH - gap;
+                float rowY = bagRowY(invY, invH, gap, bagRows, row);
                 for (int col = 0; col < Inventory.HOTBAR; col++) {
                     int idx = Inventory.HOTBAR + row * Inventory.HOTBAR + col;
                     if (idx >= items.length) break;
-                    drawSlot(batch, items[idx], amounts[idx], invX + col * slot, rowY, w, h, invW, invH, slot);
+                    drawHeldAware(batch, items, amounts, idx, dragSourceSlot, dragAmount,
+                                  invX + col * slot, rowY, w, h, invW, invH, slot);
                 }
             }
         }
-        // Floating dragged item: its icon trails the cursor, centred, while a slot is picked up.
+        // Floating dragged item: the whole picked-up group (icon + count) trails the cursor, centred.
         if (open && dragItemId != 0) {
-            TextureRegion dragIcon = icon(dragItemId);
-            if (dragIcon != null) {
-                float sz = invW / 15f;
-                batch.draw(dragIcon, dragX - sz / 2f, dragY - sz / 2f, sz, sz);
-            }
+            drawSlot(batch, dragItemId, dragAmount, dragX - slot / 2f, dragY - invH / 2f, w, h, invW, invH, slot);
         }
         batch.end();
+    }
+
+    /** Screen Y (lower-left) of bag row {@code row}, where row 0 is the visual top and the last row sits one
+     *  gap above the hotbar. Shared by render() and slotAt() so the grid and its hit-testing agree. */
+    private static float bagRowY(float invY, float invH, float gap, int bagRows, int row) {
+        return invY - (bagRows - row) * invH - gap;
+    }
+
+    /** Draw a slot, hiding the units currently picked up from the drag source so they don't double up with
+     *  the floating cursor icon. */
+    private void drawHeldAware(SpriteBatch batch, int[] items, int[] amounts, int idx, int dragSourceSlot,
+                               int dragAmount, float slotLeft, float rowTop, float w, float h,
+                               float invW, float invH, float slot) {
+        int it = items[idx], am = amounts[idx];
+        if (idx == dragSourceSlot) {
+            am -= dragAmount;
+            if (am <= 0) it = 0; // the whole slot is in hand — draw nothing here
+        }
+        drawSlot(batch, it, am, slotLeft, rowTop, w, h, invW, invH, slot);
     }
 
     /** Draw one slot's icon and stack amount. {@code slotLeft}/{@code rowTop} are the slot's lower-left in
@@ -187,7 +206,7 @@ public final class InventoryHud {
             int bagSlots = Math.max(0, itemsLength - Inventory.HOTBAR);
             int bagRows = (bagSlots + Inventory.HOTBAR - 1) / Inventory.HOTBAR;
             for (int row = 0; row < bagRows; row++) {
-                float rowY = g.invY - (row + 1) * g.invH - g.gap;
+                float rowY = bagRowY(g.invY, g.invH, g.gap, bagRows, row);
                 if (within(mx, my, g.invX, rowY, g.invW, g.invH)) {
                     int col = (int) ((mx - g.invX) / g.slot);
                     if (col >= 0 && col < Inventory.HOTBAR) {
