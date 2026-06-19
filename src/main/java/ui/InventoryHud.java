@@ -80,12 +80,14 @@ public final class InventoryHud {
         for (int i = 0; i < Inventory.HOTBAR && i < items.length; i++) {
             drawSlot(batch, items[i], amounts[i], invX + i * slot, invY, w, h, invW, invH, slot);
         }
-        // Bag: the remaining slots as rows stacked above the hotbar (row 0 just above it, then upward).
+        // Bag: the remaining slots as rows stacked above the hotbar, lifted by a one-tile gap so the grid
+        // reads as a separate panel rather than a fourth hotbar row (row 0 nearest the hotbar, then upward).
         if (open) {
+            float gap = invH; // one inventory tile of breathing room between the hotbar and the bag
             int bagSlots = Math.max(0, items.length - Inventory.HOTBAR);
             int bagRows = (bagSlots + Inventory.HOTBAR - 1) / Inventory.HOTBAR; // ceil
             for (int row = 0; row < bagRows; row++) {
-                float rowY = invY - (row + 1) * invH;
+                float rowY = invY - (row + 1) * invH - gap;
                 batch.draw(barRegion, invX, rowY, invW, invH);
                 for (int col = 0; col < Inventory.HOTBAR; col++) {
                     int idx = Inventory.HOTBAR + row * Inventory.HOTBAR + col;
