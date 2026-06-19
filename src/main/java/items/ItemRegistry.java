@@ -29,14 +29,14 @@ public final class ItemRegistry {
             for (ItemBlueprint b : explicit) {
                 if (b == null) continue;
                 String iconPath = b.iconPath; // tools: null unless the data file gives one
-                byId.put(b.id, new ItemType(b.id, b.name, b.category, iconPath, b.cropIndex));
+                byId.put(b.id, new ItemType(b.id, b.name, b.category, iconPath, b.cropIndex, b.toolIndex));
             }
         }
         if (crops != null) {
             for (CropType c : crops) {
                 if (c == null) continue;
                 byId.putIfAbsent(c.itemId, new ItemType(
-                        c.itemId, c.name, "crop", "food/" + c.itemId + ".png", c.index));
+                        c.itemId, c.name, "crop", "food/" + c.itemId + ".png", c.index, -1));
             }
         }
     }
@@ -55,6 +55,12 @@ public final class ItemRegistry {
     public int cropIndexFor(int id) {
         ItemType t = byId.get(id);
         return (t == null) ? -1 : t.cropIndex;
+    }
+
+    /** The player-animation/tool index a held item activates, or {@code -1} if it isn't a tool. */
+    public int toolIndexFor(int id) {
+        ItemType t = byId.get(id);
+        return (t == null) ? -1 : t.toolIndex;
     }
 
     public int count() {

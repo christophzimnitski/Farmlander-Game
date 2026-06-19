@@ -1,7 +1,7 @@
 [
-  { "id": 1, "name": "Axe",          "category": "tool" },
-  { "id": 2, "name": "Pickaxe",      "category": "tool" },
-  { "id": 3, "name": "Watering Can", "category": "tool" },
-  { "id": 4, "name": "Hoe",          "category": "tool" },
-  { "id": 5, "name": "Shovel",       "category": "tool" }
+  { "id": 1, "name": "Axe",          "category": "tool", "iconPath": "tools/1.png", "toolIndex": 1 },
+  { "id": 2, "name": "Pickaxe",      "category": "tool", "iconPath": "tools/2.png", "toolIndex": 2 },
+  { "id": 3, "name": "Watering Can", "category": "tool", "iconPath": "tools/3.png", "toolIndex": 3 },
+  { "id": 4, "name": "Hoe",          "category": "tool", "iconPath": "tools/4.png", "toolIndex": 4 },
+  { "id": 5, "name": "Shovel",       "category": "tool", "iconPath": "tools/5.png", "toolIndex": 5 }
 ]

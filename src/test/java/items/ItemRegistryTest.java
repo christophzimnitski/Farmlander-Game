@@ -60,4 +60,13 @@ class ItemRegistryTest {
         assertEquals(-1, reg.cropIndexFor(1));  // a tool plants nothing
         assertEquals(-1, reg.cropIndexFor(999)); // unknown id
     }
+
+    @Test
+    void toolIndexForLooksUpTheActivatedAnimationSet() {
+        ItemBlueprint hoe = new ItemBlueprint(4, "Hoe", "tool", "tools/4.png", -1, 4);
+        ItemRegistry reg = new ItemRegistry(new ItemBlueprint[]{hoe}, new CropType[]{crop(0, "Potato")});
+        assertEquals(4, reg.toolIndexFor(4));    // the Hoe activates animation set 4 (tilling)
+        assertEquals(-1, reg.toolIndexFor(100)); // a crop item is not a tool
+        assertEquals(-1, reg.toolIndexFor(999)); // unknown id
+    }
 }

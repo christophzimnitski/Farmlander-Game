@@ -13,16 +13,22 @@ public final class ItemType {
     public final String category;  // "tool" | "crop"
     public final String iconPath;  // HUD sprite path under resources/, or null for none
     public final int cropIndex;    // crop items: the CropType index they plant; -1 otherwise
+    public final int toolIndex;    // tools: the player-animation set they activate (chop/mine/...); -1 otherwise
 
-    public ItemType(int id, String name, String category, String iconPath, int cropIndex) {
+    public ItemType(int id, String name, String category, String iconPath, int cropIndex, int toolIndex) {
         this.id = id;
         this.name = name;
         this.category = category;
         this.iconPath = iconPath;
         this.cropIndex = cropIndex;
+        this.toolIndex = toolIndex;
     }
 
     public boolean isCrop() {
         return cropIndex >= 0;
+    }
+
+    public boolean isTool() {
+        return toolIndex >= 0;
     }
 }
