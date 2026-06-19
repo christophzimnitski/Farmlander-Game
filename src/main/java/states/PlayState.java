@@ -332,7 +332,7 @@ public class PlayState extends GameState {
         if (inventoryOpen) {
             // Mouse: drag/move items, shift to act on the whole stack, click a slot to select it (re-syncing
             // the held tool), click the dim backdrop to close.
-            InventoryInteraction.Result r = inventoryInteraction.update(selectedSlot, true);
+            InventoryInteraction.Result r = inventoryInteraction.update(delta, selectedSlot, true);
             selectedSlot = r.selectedSlot;
             if (r.close) { inventoryOpen = false; inventoryInteraction.cancel(); }
             syncSelectedTool(); // a move may have changed the selected slot's item

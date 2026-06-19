@@ -20,70 +20,70 @@ class InventoryInteractionTest {
     }
 
     @Test
-    void moveOneFillsAnEmptyTargetAndDecrementsSource() {
+    void dropCarriedFillsAnEmptyTargetWithTheCarriedUnits() {
         int[] items = slots(), amounts = slots();
         set(items, amounts, 0, 5, 3);
-        InventoryInteraction.moveOne(items, amounts, 0, 1);
+        InventoryInteraction.dropCarried(items, amounts, 0, 1, 1); // carried 1 of 3
         assertEquals(5, items[1]); assertEquals(1, amounts[1]);
         assertEquals(5, items[0]); assertEquals(2, amounts[0]);
     }
 
     @Test
-    void moveOneStacksOntoTheSameItem() {
+    void dropCarriedStacksOntoTheSameItem() {
         int[] items = slots(), amounts = slots();
         set(items, amounts, 0, 5, 3);
         set(items, amounts, 1, 5, 4);
-        InventoryInteraction.moveOne(items, amounts, 0, 1);
-        assertEquals(5, amounts[1]); // 4 + 1
-        assertEquals(2, amounts[0]); // 3 - 1
+        InventoryInteraction.dropCarried(items, amounts, 0, 1, 2); // carried 2
+        assertEquals(6, amounts[1]); // 4 + 2
+        assertEquals(1, amounts[0]); // 3 - 2
     }
 
     @Test
-    void moveOneEmptiesSourceOnItsLastUnit() {
+    void dropCarriedEmptiesSourceWhenTheWholeStackIsMoved() {
         int[] items = slots(), amounts = slots();
-        set(items, amounts, 0, 5, 1);
-        InventoryInteraction.moveOne(items, amounts, 0, 1);
-        assertEquals(5, items[1]); assertEquals(1, amounts[1]);
-        assertEquals(0, items[0]); assertEquals(0, amounts[0]); // source cleared
+        set(items, amounts, 0, 5, 3);
+        InventoryInteraction.dropCarried(items, amounts, 0, 1, 3); // whole stack
+        assertEquals(5, items[1]); assertEquals(3, amounts[1]);
+        assertEquals(0, items[0]); assertEquals(0, amounts[0]);
     }
 
     @Test
-    void moveOneLeavesADifferentOccupiedTargetUntouched() {
+    void dropCarriedClampsCarriedToWhatTheSourceHolds() {
+        int[] items = slots(), amounts = slots();
+        set(items, amounts, 0, 5, 2);
+        InventoryInteraction.dropCarried(items, amounts, 0, 1, 99); // over-carry
+        assertEquals(5, items[1]); assertEquals(2, amounts[1]);
+        assertEquals(0, items[0]); assertEquals(0, amounts[0]);
+    }
+
+    @Test
+    void dropCarriedSwapsOntoADifferentItemOnlyWhenCarryingTheWholeStack() {
         int[] items = slots(), amounts = slots();
         set(items, amounts, 0, 5, 3);
         set(items, amounts, 1, 7, 2);
-        InventoryInteraction.moveOne(items, amounts, 0, 1);
+        InventoryInteraction.dropCarried(items, amounts, 0, 1, 3); // whole stack onto a different item
+        assertEquals(5, items[1]); assertEquals(3, amounts[1]);
+        assertEquals(7, items[0]); assertEquals(2, amounts[0]); // swapped
+    }
+
+    @Test
+    void dropCarriedIsANoopOnADifferentItemWhenCarryingOnlyPart() {
+        int[] items = slots(), amounts = slots();
+        set(items, amounts, 0, 5, 3);
+        set(items, amounts, 1, 7, 2);
+        InventoryInteraction.dropCarried(items, amounts, 0, 1, 1); // partial onto a different item
         assertEquals(7, items[1]); assertEquals(2, amounts[1]); // unchanged
-        assertEquals(5, items[0]); assertEquals(3, amounts[0]); // unchanged
+        assertEquals(5, items[0]); assertEquals(3, amounts[0]); // units stay put
     }
 
     @Test
-    void moveStackFillsAnEmptyTargetAndClearsSource() {
+    void dropCarriedSwapsASingleUnitStackSinceThatIsTheWholeStack() {
         int[] items = slots(), amounts = slots();
-        set(items, amounts, 0, 5, 3);
-        InventoryInteraction.moveStack(items, amounts, 0, 1);
-        assertEquals(5, items[1]); assertEquals(3, amounts[1]);
-        assertEquals(0, items[0]); assertEquals(0, amounts[0]);
-    }
-
-    @Test
-    void moveStackMergesOntoTheSameItem() {
-        int[] items = slots(), amounts = slots();
-        set(items, amounts, 0, 5, 3);
-        set(items, amounts, 1, 5, 4);
-        InventoryInteraction.moveStack(items, amounts, 0, 1);
-        assertEquals(5, items[1]); assertEquals(7, amounts[1]);
-        assertEquals(0, items[0]); assertEquals(0, amounts[0]);
-    }
-
-    @Test
-    void moveStackSwapsWhenTheTargetHoldsADifferentItem() {
-        int[] items = slots(), amounts = slots();
-        set(items, amounts, 0, 5, 3);
+        set(items, amounts, 0, 9, 1); // a one-of (e.g. a tool)
         set(items, amounts, 1, 7, 2);
-        InventoryInteraction.moveStack(items, amounts, 0, 1);
-        assertEquals(5, items[1]); assertEquals(3, amounts[1]);
-        assertEquals(7, items[0]); assertEquals(2, amounts[0]);
+        InventoryInteraction.dropCarried(items, amounts, 0, 1, 1);
+        assertEquals(9, items[1]); assertEquals(1, amounts[1]);
+        assertEquals(7, items[0]); assertEquals(2, amounts[0]); // swapped
     }
 
     @Test

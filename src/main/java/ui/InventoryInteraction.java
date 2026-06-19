@@ -12,15 +12,24 @@ import input.InputBindings;
  * <ul>
  *   <li><b>press slot → release same slot</b>: plain = select/highlight it; Shift = quick-transfer its whole
  *       stack to the other region (hotbar↔bag).</li>
- *   <li><b>press slot → release a different slot</b>: plain = move one item; Shift = move the whole stack
- *       (swapping if the target holds a different item).</li>
+ *   <li><b>press slot → release a different slot</b>: drop the carried units — fill an empty target, merge onto
+ *       the same item, or (only when carrying the <em>entire</em> source stack) swap the two slots. A partial
+ *       drop onto a different item is a no-op (the units stay put).</li>
  *   <li><b>press dim → release dim</b>: ask to close the popup.</li>
  *   <li>a drag released on the dim backdrop is cancelled (no move, popup stays open).</li>
  * </ul>
- * While the button is held over a picked-up slot, {@link #draggedItemId()} / {@link #cursorX()} let the HUD
- * float that item's icon at the cursor. The move operations are pure array edits (no GL) and unit-tested.
+ * The carried amount starts at one and, while the button is held, ramps up exponentially toward the whole
+ * stack (Shift picks up the whole stack at once). While held, {@link #draggedItemId()} / {@link #draggedAmount()}
+ * / {@link #cursorX()} let the HUD float that group (icon + count) at the cursor. The move operations are pure
+ * array edits (no GL) and unit-tested.
  */
 public final class InventoryInteraction {
+    // Hold-to-grab ramp: the pickup rate (items/sec) starts at BASE and grows exponentially with hold time,
+    // capped at MAX — so a quick drag carries ~1 and holding scoops the stack ever faster.
+    private static final float RAMP_BASE_RATE = 6f;
+    private static final float RAMP_ACCEL = 4f;
+    private static final float RAMP_MAX_RATE = 50f;
+
     private final int[] items, amounts;
     private final InventoryHud hud;
     private final InputBindings input;
@@ -29,7 +38,9 @@ public final class InventoryInteraction {
     private boolean dragging = false;  // a non-empty slot is currently picked up
     private int pressSlot = -1;        // slot the press landed on (-1 = dim/outside)
     private boolean pressShift = false; // Shift state captured at press time
-    private int dragAmount = 0;        // units picked up: 1 for a plain drag, the whole stack for Shift
+    private int dragAmount = 0;        // units in hand: ramps from 1 while held (whole stack on Shift)
+    private float holdTime = 0f;       // seconds the plain drag has been held (drives the ramp)
+    private float holdAccum = 0f;      // accumulated fractional items grabbed by the ramp
     private float cursorX, cursorY;
 
     public InventoryInteraction(int[] items, int[] amounts, InventoryHud hud, InputBindings input) {
@@ -43,7 +54,7 @@ public final class InventoryInteraction {
      * Process one frame of inventory mouse input while the popup is open. Returns the (possibly new) selected
      * slot and whether a click on the dim backdrop asked to close the popup.
      */
-    public Result update(int selectedSlot, boolean open) {
+    public Result update(float delta, int selectedSlot, boolean open) {
         boolean down = input.isPrimaryPointerDown();
         cursorX = input.pointerX();
         cursorY = input.pointerY();
@@ -54,9 +65,10 @@ public final class InventoryInteraction {
             pressSlot = hud.slotAt(cursorX, cursorY, items.length, open);
             pressShift = input.isShiftDown();
             dragging = pressSlot >= 0 && items[pressSlot] != 0;
-            // What's "in hand": a plain drag carries one item, a Shift-drag the whole stack. Used to mask the
-            // source slot so the picked-up units don't also show there (no duplicate sprite).
+            // What's "in hand": Shift picks up the whole stack at once; a plain drag starts at one and ramps.
             dragAmount = dragging ? (pressShift ? amounts[pressSlot] : 1) : 0;
+            holdTime = 0f;
+            holdAccum = 0f;
         } else if (!down && wasDown) { // release edge
             int releaseSlot = hud.slotAt(cursorX, cursorY, items.length, open);
             if (pressSlot < 0 && releaseSlot < 0) {
@@ -66,14 +78,23 @@ public final class InventoryInteraction {
                     if (pressShift) quickTransfer(items, amounts, pressSlot);
                     else newSelected = pressSlot; // a plain click selects/highlights the slot
                 } else if (releaseSlot >= 0) {
-                    if (pressShift) moveStack(items, amounts, pressSlot, releaseSlot);
-                    else moveOne(items, amounts, pressSlot, releaseSlot);
+                    dropCarried(items, amounts, pressSlot, releaseSlot, dragAmount);
                 }
                 // releaseSlot < 0 (dropped on the dim): cancel — no move.
             }
             dragging = false;
             pressSlot = -1;
         }
+
+        // While a plain drag is held, ramp the carried amount up toward the whole source stack: the pickup
+        // rate grows exponentially with hold time (capped), so the count climbs slowly then ever faster.
+        if (dragging && !pressShift) {
+            holdTime += delta;
+            float rate = Math.min(RAMP_MAX_RATE, RAMP_BASE_RATE * (float) Math.exp(RAMP_ACCEL * holdTime));
+            holdAccum += rate * delta;
+            dragAmount = Math.min(amounts[pressSlot], 1 + (int) holdAccum);
+        }
+
         wasDown = down;
         return new Result(newSelected, close);
     }
@@ -99,6 +120,8 @@ public final class InventoryInteraction {
         dragging = false;
         pressSlot = -1;
         dragAmount = 0;
+        holdTime = 0f;
+        holdAccum = 0f;
         wasDown = false;
     }
 
@@ -115,38 +138,29 @@ public final class InventoryInteraction {
 
     // --- pure move operations (no GL; unit-tested) ---
 
-    /** Move one item from {@code from} to {@code to}: fills an empty target or stacks onto the same item.
-     *  A different, occupied target is left alone (use a Shift-drag to swap whole stacks). */
-    static void moveOne(int[] items, int[] amounts, int from, int to) {
-        if (from == to || items[from] == 0 || amounts[from] <= 0) return;
+    /** Drop {@code carried} units from {@code from} onto {@code to}: fill an empty target, merge onto the same
+     *  item, or — only when {@code carried} is the <em>entire</em> source stack — swap the two slots. A partial
+     *  drop onto a different item is a no-op (the carried units stay in the source). {@code carried} is clamped
+     *  to what the source actually holds. */
+    static void dropCarried(int[] items, int[] amounts, int from, int to, int carried) {
+        if (from == to || items[from] == 0 || carried <= 0) return;
+        carried = Math.min(carried, amounts[from]);
+        boolean wholeStack = carried >= amounts[from];
         if (items[to] == 0) {
             items[to] = items[from];
-            amounts[to] = 1;
-            decrement(items, amounts, from);
+            amounts[to] = carried;
+            decrementBy(items, amounts, from, carried);
         } else if (items[to] == items[from]) {
-            amounts[to]++;
-            decrement(items, amounts, from);
-        }
-    }
-
-    /** Move the whole stack from {@code from} to {@code to}: fills an empty target, merges onto the same item,
-     *  or swaps the two slots when the target holds a different item. */
-    static void moveStack(int[] items, int[] amounts, int from, int to) {
-        if (from == to || items[from] == 0) return;
-        if (items[to] == 0) {
-            items[to] = items[from];
-            amounts[to] = amounts[from];
-            clear(items, amounts, from);
-        } else if (items[to] == items[from]) {
-            amounts[to] += amounts[from];
-            clear(items, amounts, from);
-        } else { // swap
+            amounts[to] += carried;
+            decrementBy(items, amounts, from, carried);
+        } else if (wholeStack) { // different item — swap only when the whole stack is in hand
             int ti = items[to], ta = amounts[to];
             items[to] = items[from];
             amounts[to] = amounts[from];
             items[from] = ti;
             amounts[from] = ta;
         }
+        // else: a partial drop onto a different item — no-op, the units return to the source.
     }
 
     /** Quick-transfer a whole stack to the other region: a hotbar slot ({@code < HOTBAR}) goes to the bag and
@@ -174,8 +188,9 @@ public final class InventoryInteraction {
         }
     }
 
-    private static void decrement(int[] items, int[] amounts, int slot) {
-        if (--amounts[slot] <= 0) clear(items, amounts, slot);
+    private static void decrementBy(int[] items, int[] amounts, int slot, int n) {
+        amounts[slot] -= n;
+        if (amounts[slot] <= 0) clear(items, amounts, slot);
     }
 
     private static void clear(int[] items, int[] amounts, int slot) {
