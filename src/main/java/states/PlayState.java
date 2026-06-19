@@ -85,6 +85,7 @@ public class PlayState extends GameState {
     private PlayerCharacter player; // position, facing, tool, walk animation; also the collision Body
     private final int[] inventoryItems, inventoryAmounts; // live refs into the Inventory built at load
     private int selectedSlot;
+    private int lastHotbarSlot; // the hotbar slot to restore on inventory close — the hand never holds a bag slot
 
     // Crop subsystem.
     private final Texture cropsTexture;
@@ -213,6 +214,7 @@ public class PlayState extends GameState {
         }
         inv.moveSelection(sSelectedSlot - inv.getSelectedSlot());
         selectedSlot = inv.getSelectedSlot();
+        lastHotbarSlot = selectedSlot; // getSelectedSlot is always a hotbar slot — a safe starting hand
         // Player avatar: position + walk sheet, recovering tool/facing from the saved animation state.
         player = new PlayerCharacter(px, py, animation, selected, playerFrames);
 
@@ -312,6 +314,15 @@ public class PlayState extends GameState {
         player.setTool(itemRegistry.toolIndexFor(inventoryItems[selectedSlot]));
     }
 
+    /** Close the inventory popup, snapping the selection back to the last highlighted hotbar slot. The held
+     *  item always comes from the hotbar, never a bag slot, so moving a tool into the bag empties the hand. */
+    private void closeInventory() {
+        inventoryOpen = false;
+        inventoryInteraction.cancel();
+        selectedSlot = lastHotbarSlot;
+        syncSelectedTool();
+    }
+
     /** Would the player's feet hitbox collide if shifted by (dx,dy) from where it is now? */
     private boolean wouldCollide(float dx, float dy) {
         return collisionResolver.collidesAt(player.hitboxX() + dx, player.hitboxY() + dy,
@@ -326,16 +337,17 @@ public class PlayState extends GameState {
         // TAB toggles the inventory popup. While it's open the world is a frozen, dimmed backdrop (a modal):
         // no movement, no tool use, no planting — only browsing/rearranging the bag, or closing it again.
         if (input.isJustPressed(InputAction.OPEN_INVENTORY)) {
-            inventoryOpen = !inventoryOpen;
-            if (!inventoryOpen) inventoryInteraction.cancel();
+            if (inventoryOpen) closeInventory();
+            else { inventoryOpen = true; lastHotbarSlot = Math.min(selectedSlot, Inventory.HOTBAR - 1); }
         }
         if (inventoryOpen) {
-            // Mouse: drag/move items, shift to act on the whole stack, click a slot to select it (re-syncing
-            // the held tool), click the dim backdrop to close.
+            // Mouse: drag/move items, shift to act on the whole stack, click a slot to highlight/move it, click
+            // the dim backdrop to close. The highlight may roam into the bag, but the hand tracks the hotbar.
             InventoryInteraction.Result r = inventoryInteraction.update(delta, selectedSlot, true);
             selectedSlot = r.selectedSlot;
-            if (r.close) { inventoryOpen = false; inventoryInteraction.cancel(); }
-            syncSelectedTool(); // a move may have changed the selected slot's item
+            if (selectedSlot < Inventory.HOTBAR) lastHotbarSlot = selectedSlot; // remember the latest hotbar highlight
+            if (r.close) closeInventory();
+            else syncSelectedTool(); // keep the (frozen) held tool roughly in step while browsing
             updateCamera();
             return;
         }
@@ -435,7 +447,7 @@ public class PlayState extends GameState {
                              farmInteraction.hoverPlantable());
         inventoryHud.render(batch, gameCamera.hudCombined(), inventoryItems, inventoryAmounts, selectedSlot,
                             inventoryOpen, inventoryInteraction.draggedItemId(), inventoryInteraction.draggedAmount(),
-                            inventoryInteraction.draggedSourceSlot(),
+                            inventoryInteraction.draggedSourceSlot(), inventoryInteraction.hoverSlot(),
                             inventoryInteraction.cursorX(), inventoryInteraction.cursorY());
     }
 

@@ -60,7 +60,8 @@ public final class InventoryHud {
      * dimmed and the bag — the remaining slots as a 3×10 grid — is drawn stacked directly above the hotbar.
      */
     public void render(SpriteBatch batch, Matrix4 hudCombined, int[] items, int[] amounts, int selectedSlot,
-                       boolean open, int dragItemId, int dragAmount, int dragSourceSlot, float dragX, float dragY) {
+                       boolean open, int dragItemId, int dragAmount, int dragSourceSlot, int hoverSlot,
+                       float dragX, float dragY) {
         float w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
         float invW = 1200, invH = invW / 10f; // 120
         float invX = w / 2f - invW / 2f, invY = h * 7f / 8f;
@@ -86,15 +87,15 @@ public final class InventoryHud {
                 batch.draw(barRegion, invX, bagRowY(invY, invH, gap, bagRows, row), invW, invH);
             }
         }
-        // Selection highlight on the selected slot's cell — a hotbar slot always, or (when open) a bag slot.
-        if (selectedSlot >= 0 && selectedSlot < items.length) {
-            if (selectedSlot < Inventory.HOTBAR) {
-                batch.draw(toggleRegion, invX + selectedSlot * slot, invY, slot, invH);
-            } else if (open) {
-                int bagIdx = selectedSlot - Inventory.HOTBAR;
-                int r = bagIdx / Inventory.HOTBAR, col = bagIdx % Inventory.HOTBAR;
-                batch.draw(toggleRegion, invX + col * slot, bagRowY(invY, invH, gap, bagRows, r), slot, invH);
+        // Highlights: while dragging, mark the picked-up source slot and the slot under the cursor (where it
+        // would land); otherwise mark the persistent selection. The same toggle sprite is reused for all.
+        if (dragItemId != 0) {
+            drawHighlight(batch, dragSourceSlot, items.length, open, invX, invY, invH, slot, gap, bagRows);
+            if (hoverSlot != dragSourceSlot) {
+                drawHighlight(batch, hoverSlot, items.length, open, invX, invY, invH, slot, gap, bagRows);
             }
+        } else {
+            drawHighlight(batch, selectedSlot, items.length, open, invX, invY, invH, slot, gap, bagRows);
         }
         // Slot contents: hotbar always, bag when open. The drag source slot hides its picked-up units so the
         // dragged item shows only at the cursor (no duplicate sprite).
@@ -124,6 +125,21 @@ public final class InventoryHud {
      *  gap above the hotbar. Shared by render() and slotAt() so the grid and its hit-testing agree. */
     private static float bagRowY(float invY, float invH, float gap, int bagRows, int row) {
         return invY - (bagRows - row) * invH - gap;
+    }
+
+    /** Draw the selection toggle over a slot's cell — a hotbar slot always, a bag slot only when {@code open}.
+     *  A negative / out-of-range index draws nothing. Shared so the persistent selection, the drag source, and
+     *  the landing-spot all highlight identically. */
+    private void drawHighlight(SpriteBatch batch, int slotIndex, int itemsLength, boolean open,
+                               float invX, float invY, float invH, float slot, float gap, int bagRows) {
+        if (slotIndex < 0 || slotIndex >= itemsLength) return;
+        if (slotIndex < Inventory.HOTBAR) {
+            batch.draw(toggleRegion, invX + slotIndex * slot, invY, slot, invH);
+        } else if (open) {
+            int bagIdx = slotIndex - Inventory.HOTBAR;
+            int r = bagIdx / Inventory.HOTBAR, col = bagIdx % Inventory.HOTBAR;
+            batch.draw(toggleRegion, invX + col * slot, bagRowY(invY, invH, gap, bagRows, r), slot, invH);
+        }
     }
 
     /** Draw a slot, hiding the units currently picked up from the drag source so they don't double up with

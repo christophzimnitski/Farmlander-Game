@@ -10,18 +10,21 @@ import input.InputBindings;
  * <p>Interaction model (left button), with the press slot and release slot resolved through
  * {@link InventoryHud#slotAt}:
  * <ul>
- *   <li><b>press slot → release same slot</b>: plain = select/highlight it; Shift = quick-transfer its whole
- *       stack to the other region (hotbar↔bag).</li>
- *   <li><b>press slot → release a different slot</b>: drop the carried units — fill an empty target, merge onto
- *       the same item, or (only when carrying the <em>entire</em> source stack) swap the two slots. A partial
- *       drop onto a different item is a no-op (the units stay put).</li>
+ *   <li><b>press slot → release same slot</b>: Shift = quick-transfer its whole stack to the other region
+ *       (hotbar↔bag); otherwise <em>click-to-move</em> — a plain click highlights the slot, and a further click
+ *       on another slot sends the highlighted slot's whole stack there if it can land (empty target or the same
+ *       item to merge). Clicking a different item just re-highlights it (no swap on click — only a drag swaps);
+ *       the destination stays highlighted, so successive clicks keep moving it on.</li>
+ *   <li><b>press slot → release a different slot</b>: a drag — drop the carried units — fill an empty target,
+ *       merge onto the same item, or (only when carrying the <em>entire</em> source stack) swap the two slots.
+ *       A partial drop onto a different item is a no-op (the units stay put).</li>
  *   <li><b>press dim → release dim</b>: ask to close the popup.</li>
  *   <li>a drag released on the dim backdrop is cancelled (no move, popup stays open).</li>
  * </ul>
- * The carried amount starts at one and, while the button is held, ramps up exponentially toward the whole
+ * The dragged amount starts at one and, while the button is held, ramps up exponentially toward the whole
  * stack (Shift picks up the whole stack at once). While held, {@link #draggedItemId()} / {@link #draggedAmount()}
- * / {@link #cursorX()} let the HUD float that group (icon + count) at the cursor. The move operations are pure
- * array edits (no GL) and unit-tested.
+ * / {@link #cursorX()} let the HUD float that group (icon + count) at the cursor, and {@link #hoverSlot()} marks
+ * the slot it would land on. The move operations are pure array edits (no GL) and unit-tested.
  */
 public final class InventoryInteraction {
     // Hold-to-grab ramp: the pickup rate (items/sec) starts at BASE and grows exponentially with hold time,
@@ -42,6 +45,7 @@ public final class InventoryInteraction {
     private int dragAmount = 0;        // units in hand: ramps from 1 while held (whole stack on Shift)
     private float holdTime = 0f;       // seconds the plain drag has been held (drives the ramp)
     private float holdAccum = 0f;      // accumulated fractional items grabbed by the ramp
+    private int hoverSlot = -1;        // slot under the cursor mid-drag (for the landing-spot highlight), else -1
     private float cursorX, cursorY;
 
     public InventoryInteraction(int[] items, int[] amounts, InventoryHud hud, InputBindings input) {
@@ -76,10 +80,19 @@ public final class InventoryInteraction {
                 close = true; // a click on the dim backdrop closes the popup
             } else if (pressSlot >= 0) {
                 if (releaseSlot == pressSlot) {
-                    if (pressShift) quickTransfer(items, amounts, pressSlot);
-                    else newSelected = pressSlot; // a plain click selects/highlights the slot
+                    if (pressShift) {
+                        quickTransfer(items, amounts, pressSlot);
+                    } else if (newSelected >= 0 && newSelected != pressSlot && items[newSelected] != 0
+                               && (items[pressSlot] == 0 || items[pressSlot] == items[newSelected])) {
+                        // Click-to-move: send the highlighted slot's whole stack here — into an empty slot or
+                        // merged onto the same item. A different item is left untouched (only a drag swaps). The
+                        // clicked slot stays highlighted, so it becomes the source for a further click (move on).
+                        dropCarried(items, amounts, newSelected, pressSlot, amounts[newSelected]);
+                    }
+                    newSelected = pressSlot; // a plain click always highlights the clicked slot
                 } else if (releaseSlot >= 0) {
                     dropCarried(items, amounts, pressSlot, releaseSlot, dragAmount);
+                    newSelected = releaseSlot; // the dropped-on slot stays highlighted
                 }
                 // releaseSlot < 0 (dropped on the dim): cancel — no move.
             }
@@ -95,6 +108,9 @@ public final class InventoryInteraction {
             holdAccum += rate * delta;
             dragAmount = Math.min(amounts[pressSlot], 1 + (int) holdAccum);
         }
+
+        // The slot under the cursor mid-drag, so the HUD can highlight where the carried item would land.
+        hoverSlot = dragging ? hud.slotAt(cursorX, cursorY, items.length, open) : -1;
 
         wasDown = down;
         return new Result(newSelected, close);
@@ -112,6 +128,9 @@ public final class InventoryInteraction {
     /** The slot the drag started from (so the HUD can hide the picked-up units there), or {@code -1}. */
     public int draggedSourceSlot() { return dragging ? pressSlot : -1; }
 
+    /** The slot under the cursor during a drag (for the HUD's landing-spot highlight), or {@code -1}. */
+    public int hoverSlot() { return hoverSlot; }
+
     public float cursorX() { return cursorX; }
 
     public float cursorY() { return cursorY; }
@@ -123,6 +142,7 @@ public final class InventoryInteraction {
         dragAmount = 0;
         holdTime = 0f;
         holdAccum = 0f;
+        hoverSlot = -1;
         wasDown = false;
     }
 
