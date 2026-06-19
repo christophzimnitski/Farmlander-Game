@@ -23,12 +23,6 @@ public final class CropField {
         return inBounds(col, row) && grid[col][row] == null;
     }
 
-    /** Open for (re)planting: empty, or holding a harvested hole that can be planted over. */
-    public boolean isOpen(int col, int row) {
-        PlantedCrop p = at(col, row);
-        return inBounds(col, row) && (p == null || p.harvested);
-    }
-
     public void plant(int col, int row, CropType type, long now) {
         if (inBounds(col, row)) grid[col][row] = new PlantedCrop(type, now);
     }

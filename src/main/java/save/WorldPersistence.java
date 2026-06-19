@@ -69,7 +69,7 @@ public final class WorldPersistence {
         ws.invAmounts = inventoryAmounts;
         ws.invToggle = selectedSlot;
         ws.collision = collision.toDense();
-        ws.planting = soil.grid().toDense(); // tilled flags (0/1)
+        ws.planting = soil.grid().toDense(); // tilled flags (0/1); watering is a separate, unsaved runtime layer
         ws.grass = grass.toDense();
         ws.worldSeed = worldSeed;
 

@@ -1,6 +1,7 @@
 package world;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -70,6 +71,58 @@ class DualGridSoilTest {
         for (int c = 0; c < 3; c++)
             for (int r = 0; r < 3; r++) soil.till(c, r);
         assertEquals(11, DualGridSoil.tileForMask(soil.maskAt(1, 1)));
+    }
+
+    @Test
+    void wateringWetsTilledSoilThenItDriesOnATimer() {
+        DualGridSoil soil = new DualGridSoil(new ChunkedTileLayer(3, 3, 1f));
+        long t0 = 1_000_000L;
+
+        // Can't water ground that was never tilled — nothing there to wet.
+        soil.water(0, 0, t0);
+        assertFalse(soil.isWatered(0, 0), "untilled ground can't be watered");
+
+        soil.till(1, 1);
+        soil.water(1, 1, t0);
+        assertTrue(soil.isWatered(1, 1), "watering tilled soil wets it");
+        assertTrue(soil.isPlantable(1, 1), "watered soil is still plantable");
+
+        // Still wet just before the timeout; dries once it elapses.
+        soil.update(t0 + 29_000L, 30_000L);
+        assertTrue(soil.isWatered(1, 1), "still wet before the dry timeout");
+        soil.update(t0 + 30_000L, 30_000L);
+        assertFalse(soil.isWatered(1, 1), "wet soil dries once the timeout elapses");
+        assertTrue(soil.isPlantable(1, 1), "drying leaves the soil tilled and plantable");
+    }
+
+    @Test
+    void tillingShovellingAndUntillingAllRemoveWater() {
+        DualGridSoil soil = new DualGridSoil(new ChunkedTileLayer(3, 3, 1f));
+        long t0 = 5_000L;
+
+        soil.till(0, 0); soil.water(0, 0, t0);
+        soil.till(0, 0); // re-tilling
+        assertFalse(soil.isWatered(0, 0), "re-tilling dries the soil");
+
+        soil.till(1, 0); soil.water(1, 0, t0);
+        soil.dry(1, 0); // shovel disturbance
+        assertFalse(soil.isWatered(1, 0), "drying (shoveling) removes the water");
+
+        soil.till(2, 0); soil.water(2, 0, t0);
+        soil.clear(2, 0); // pickaxe un-till
+        assertFalse(soil.isWatered(2, 0), "un-tilling removes the water");
+        assertFalse(soil.isTilled(2, 0), "un-tilling reverts the cell to bare ground");
+    }
+
+    @Test
+    void wateringDoesNotChangeTheDualGridMask() {
+        // Water is a separate runtime layer, so a wet cell masks exactly like the dry tilled cell underneath.
+        DualGridSoil dry = new DualGridSoil(new ChunkedTileLayer(3, 3, 1f));
+        dry.till(1, 1);
+        DualGridSoil wet = new DualGridSoil(new ChunkedTileLayer(3, 3, 1f));
+        wet.till(1, 1);
+        wet.water(1, 1, 0L);
+        assertEquals(dry.maskAt(1, 1), wet.maskAt(1, 1), "watering must not change the soil's dual-grid shape");
     }
 
     private static int distinctCount(int[] values) {

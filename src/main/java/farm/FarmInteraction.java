@@ -1,6 +1,7 @@
 package farm;
 
 import com.badlogic.gdx.Gdx;
+import core.Config;
 import crops.CropField;
 import crops.CropGeometry;
 import crops.CropRegistry;
@@ -13,16 +14,15 @@ import render.GameCamera;
 import world.DualGridSoil;
 
 /**
- * The player's farming actions and the cell they target. Two kinds of targeting live here:
- * <ul>
- *   <li><b>mouse-targeted</b> — hovering a tile, planting the selected seed, harvesting a mature crop;</li>
- *   <li><b>facing-targeted</b> — the tool Q-actions act on the cell <em>in front of the player</em>
- *       ({@link #toolTargetCol}/{@link #toolTargetRow}): tilling soil ({@link #performTill}), the shovel
- *       clearing a harvest lump ({@link #digAtFront}), and the axe removing a non-lump crop
- *       ({@link #chopAtFront}). The renderer reads the same target cell to highlight where a held tool
- *       would act.</li>
- * </ul>
- * This is also where the planting↔inventory coupling lives, made explicit: planting consumes a seed from
+ * The player's farming actions and the cell they target. Aim resolves to a <b>flex target</b>: the cell in
+ * front of the player ({@link #toolTargetCol}/{@link #toolTargetRow}) by default, but any of the 9 cells in
+ * the 3×3 block around it when the mouse hovers within that block ({@link #targetCol}/{@link #targetRow}) — a
+ * one-tile aim flex shared by every tool and by planting. {@link PlayState} captures that cell when an action
+ * starts and hands it to the tool effects here — {@link #tillAt}, {@link #waterAt}, {@link #untillAt},
+ * {@link #digAt}, {@link #chopAt} — while {@link #plantAtTarget} sows directly. The renderer frames the same
+ * target. Harvesting ({@link #harvestAtHover}) still acts on the raw mouse cell.
+ *
+ * <p>This is also where the planting↔inventory coupling lives, made explicit: planting consumes a seed from
  * the held inventory arrays and harvesting banks the produce back into them.
  */
 public final class FarmInteraction {
@@ -36,8 +36,7 @@ public final class FarmInteraction {
     private final PlayerCharacter player;
     private final int[] inventoryItems, inventoryAmounts; // shared live refs with the Inventory/PlayState
 
-    private int hoverCol = -1, hoverRow = -1; // tile under the mouse this frame
-    private boolean hoverPlantable = false;   // hovered tile is tilled soil, empty, and clear of the player
+    private int hoverCol = -1, hoverRow = -1; // raw tile under the mouse this frame (drives aim flex + harvest)
 
     public FarmInteraction(DualGridSoil soil, CropField cropField, CropRegistry cropRegistry,
                            ItemRegistry itemRegistry, CropGeometry cropGeometry,
@@ -57,23 +56,20 @@ public final class FarmInteraction {
 
     public int hoverCol() { return hoverCol; }
     public int hoverRow() { return hoverRow; }
-    public boolean hoverPlantable() { return hoverPlantable; }
 
-    /** Resolve the cell under the mouse. A cell is plantable when it's tilled soil, empty, and planting
-     *  there wouldn't immediately overlap the player. */
+    /** Resolve the raw cell under the mouse. It feeds the tool/seed aim flex ({@link #targetCol}) and harvest. */
     public void updateHover() {
         var mouseWorld = camera.unproject(Gdx.input.getX(), Gdx.input.getY());
         hoverCol = soil.grid().colAtWorldX(mouseWorld.x);
         hoverRow = soil.grid().rowAtWorldY(mouseWorld.y);
-        hoverPlantable = soil.isTilled(hoverCol, hoverRow) && cropField.isOpen(hoverCol, hoverRow)
-                     && !playerOverlapsCropCell(hoverCol, hoverRow);
     }
 
-    /** Plant the selected seed (an inventory crop item) at the hovered tile, consuming one seed. */
-    public void plantAtHover(int selectedSlot) {
+    /** Plant the selected seed (an inventory crop item) at the action target — the facing cell, or a nearby
+     *  cell when the mouse flexes the aim — consuming one seed. No-op unless that cell is plantable. */
+    public void plantAtTarget(int dir, int selectedSlot) {
         CropType seed = cropRegistry.get(itemRegistry.cropIndexFor(inventoryItems[selectedSlot]));
-        if (seed == null || inventoryAmounts[selectedSlot] <= 0) return; // no seed of the selected crop in hand
-        cropField.plant(hoverCol, hoverRow, seed, System.currentTimeMillis());
+        if (seed == null || inventoryAmounts[selectedSlot] <= 0 || !targetPlantable(dir)) return;
+        cropField.plant(targetCol(dir), targetRow(dir), seed, System.currentTimeMillis());
         if (--inventoryAmounts[selectedSlot] <= 0) {
             inventoryAmounts[selectedSlot] = 0;
             inventoryItems[selectedSlot] = 0;
@@ -110,27 +106,80 @@ public final class FarmInteraction {
         return row;
     }
 
-    /** Till the cell one step in front of the player, which the dual grid renders as a clean 4-tile square. */
-    public void performTill(int dir) {
-        int col = toolTargetCol(dir), row = toolTargetRow(dir);
+    /** Is the mouse cell within the 3×3 "flex" block around the facing (expected) cell? When it is, the
+     *  player is aiming at a specific nearby tile; when it isn't, the aim falls back to the facing cell. */
+    private boolean mouseInFlexRange(int dir) {
+        return Math.abs(hoverCol - toolTargetCol(dir)) <= 1 && Math.abs(hoverRow - toolTargetRow(dir)) <= 1;
+    }
+
+    /** Column of the action target: the mouse cell when it's within one tile of the facing cell, else the
+     *  facing cell itself. This gives every tool (and planting) a 1-tile aim flex — 9 reachable cells centred
+     *  on the cell in front of the player. */
+    public int targetCol(int dir) { return mouseInFlexRange(dir) ? hoverCol : toolTargetCol(dir); }
+
+    /** Row of the action target — the flex counterpart to {@link #targetCol}. */
+    public int targetRow(int dir) { return mouseInFlexRange(dir) ? hoverRow : toolTargetRow(dir); }
+
+    /** Is the action target a plantable cell — tilled, truly empty, and clear of the player? A leftover
+     *  harvest lump (a "dirt pile") blocks planting; it must be shoveled away first, so this checks the cell
+     *  is empty rather than merely open-for-replant. */
+    public boolean targetPlantable(int dir) {
+        int col = targetCol(dir), row = targetRow(dir);
+        return soil.isPlantable(col, row) && cropField.isEmpty(col, row) && !playerOverlapsCropCell(col, row);
+    }
+
+    // --- Tool world effects. Each acts on an explicit cell (captured at trigger by PlayState, so the effect,
+    //     which fires mid-swing, is unaffected by the mouse moving during the swing). ---
+
+    /** Hoe: till the cell, which the dual grid renders as a clean 4-tile square. No-op out of bounds or on a
+     *  solid (collidable) cell. */
+    public void tillAt(int col, int row) {
         if (!soil.grid().inBounds(col, row) || collisionResolver.isSolid(col, row)) return;
         soil.till(col, row);
     }
 
-    /** Shovel: clear a harvest lump — the post-harvest hole a root crop leaves — at the cell in front of the
-     *  player. No-op unless that cell holds a harvested crop. */
-    public void digAtFront(int dir) {
-        int col = toolTargetCol(dir), row = toolTargetRow(dir);
+    /** Shovel: clear a harvest lump — the post-harvest hole a root crop leaves — at the cell. Disturbing the
+     *  lump also dries the soil, so any water there is removed with it. No-op unless the cell holds a
+     *  harvested crop. */
+    public void digAt(int col, int row) {
         PlantedCrop crop = cropField.at(col, row);
-        if (crop != null && crop.harvested) cropField.remove(col, row);
+        if (crop != null && crop.harvested) {
+            cropField.remove(col, row);
+            soil.dry(col, row); // shoveling the lump turns the soil over — its water goes with it
+        }
     }
 
-    /** Axe: remove a non-lump crop — a continuous/trellis crop that never leaves a lump — at the cell in
-     *  front of the player, at any growth stage. No-op on an empty cell or a lump (root) crop. */
-    public void chopAtFront(int dir) {
-        int col = toolTargetCol(dir), row = toolTargetRow(dir);
+    /** Pickaxe: un-till the cell back to bare ground. Only acts on empty tilled soil — it won't disturb a
+     *  cell that still holds a crop or a harvest lump (clear those first). */
+    public void untillAt(int col, int row) {
+        if (cropField.isEmpty(col, row) && soil.isTilled(col, row)) soil.clear(col, row);
+    }
+
+    /** Watering can: wet the cell's soil (under a crop or bare). No-op unless it's plantable (tilled) soil —
+     *  you can't water untilled ground. The wet patch dries on its own after a while (see
+     *  {@code Config.WATER_DRY_MILLIS}). */
+    public void waterAt(int col, int row) {
+        soil.water(col, row, System.currentTimeMillis());
+    }
+
+    /** Axe: remove a non-lump crop — a continuous/trellis crop that never leaves a lump — at the cell, at any
+     *  growth stage. No-op on an empty cell or a lump (root) crop. */
+    public void chopAt(int col, int row) {
         PlantedCrop crop = cropField.at(col, row);
         if (crop != null && !crop.type.leavesLump) cropField.remove(col, row);
+    }
+
+    /** Watered soil grows its crop faster: pull each watered crop's growth clock earlier by
+     *  {@code WATER_GROWTH_BONUS} of this frame's elapsed time (so it ages at 1 + bonus speed while wet).
+     *  Walks only the watered cells (sparse), so the cost is independent of field size. */
+    public void applyWaterGrowthBoost(float delta) {
+        long extra = (long) (Config.WATER_GROWTH_BONUS * delta * 1000f); // ms of bonus age this frame
+        if (extra <= 0) return;
+        long now = System.currentTimeMillis();
+        soil.forEachWatered((col, row) -> {
+            PlantedCrop crop = cropField.at(col, row);
+            if (crop != null && !crop.harvested && !crop.isMature(now)) crop.boostGrowth(extra);
+        });
     }
 
     /** Would a crop planted in cell (col,row) immediately overlap the player where they stand now? */

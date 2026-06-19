@@ -30,4 +30,8 @@ public final class Config {
     public static final float AUTOSAVE_INTERVAL = 120f;
     /** Default growth time per crop stage, ms (5 stages -> ~12s to mature). Overridable per crop in crops.json. */
     public static final long DEFAULT_STAGE_MILLIS = 3000L;
+    /** How long watered soil stays wet before it dries out on its own, ms. */
+    public static final long WATER_DRY_MILLIS = 30_000L;
+    /** Extra growth rate a crop gets while its soil is watered (0.30 = grows 30% faster). */
+    public static final float WATER_GROWTH_BONUS = 0.30f;
 }

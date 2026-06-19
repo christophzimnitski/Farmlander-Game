@@ -101,6 +101,12 @@ public class PlayState extends GameState {
     // owns the live animation/effect state; the array is filled by buildToolAction during construction.
     private final ToolAction[] toolActions = new ToolAction[playerAnimationArrays.length];
     private ToolActionSystem toolActionSystem;
+    // The cell the in-flight tool action acts on, captured at trigger so the mid-swing effect isn't shifted by
+    // the mouse moving during the swing. Plus one optional action queued by clicking during a swing: it fires
+    // the instant the swing ends, and only one may be queued at a time (a later click replaces it, no stacking).
+    private int actionCol = -1, actionRow = -1;
+    private boolean hasQueuedAction = false;
+    private int queuedToolIndex, queuedDir, queuedCol, queuedRow;
 
     public PlayState(GameStateManager stateManager) {
         super(stateManager);
@@ -131,6 +137,10 @@ public class PlayState extends GameState {
             collisionRegions[k + 18] = wh[k];
             collisionRegions[k + 36] = yw[k];
         }
+        // Watered-soil blobs: 4 organic wet patches (one sheet, picked per cell for variety) drawn over
+        // watered tiles. The cell-selection frame (ui/frame.png) highlights the tile a tool/seed will act on.
+        TextureRegion[] wateredRegions = TextureSlicer.slice(loadTexture("tilesets/watered_soil.png"), 1, 4);
+        TextureRegion frameRegion = TextureSlicer.flippedFull(loadTexture("ui/frame.png"));
 
         // Player walk sheet: 36 animation rows × 9 frames of 64px. Handed to PlayerCharacter below.
         TextureRegion[][] playerFrames = new TextureRegion[36][9];
@@ -244,7 +254,7 @@ public class PlayState extends GameState {
                 inventoryItems, inventoryAmounts, cropRegistry, worldSeed);
         worldPersistence.restoreCrops(sCrops);
         worldRenderer = new WorldRenderer(grassLayer, soil, collisionLayer, cropField, cropGeometry, Config.TILE,
-                grassRegions, soilRegions, collisionRegions);
+                grassRegions, soilRegions, collisionRegions, wateredRegions, frameRegion);
         farmInteraction = new FarmInteraction(soil, cropField, cropRegistry, itemRegistry, cropGeometry,
                 collisionResolver, gameCamera, player, inventoryItems, inventoryAmounts);
         syncSelectedTool(); // initial held tool reflects the selected hotbar slot
@@ -257,7 +267,8 @@ public class PlayState extends GameState {
 
     /** Build a world-sized layer and copy a saved grid into it (top-left aligned). A null source yields an
      *  empty layer; a smaller source (an old 40x22 save) occupies the corner. When {@code asTilledFlag},
-     *  any nonzero source cell normalizes to 1 (legacy autotile indices → "tilled?"). */
+     *  any nonzero source cell normalizes to 1 (legacy autotile indices → "tilled?"); the soil grid is a
+     *  plain 0/1 flag (watering is a separate, unsaved runtime layer). */
     private static ChunkedTileLayer placeIntoWorld(int[][] src, boolean asTilledFlag) {
         ChunkedTileLayer layer = new ChunkedTileLayer(Config.WORLD_COLS, Config.WORLD_ROWS, Config.TILE);
         if (src == null) return layer;
@@ -333,6 +344,8 @@ public class PlayState extends GameState {
     public void update(float delta) {
         if (input.isDown(InputAction.QUIT)) Gdx.app.exit();
         autosave(delta); // periodic save so a crash/SIGKILL doesn't lose progress (exit-only save isn't enough)
+        soil.update(System.currentTimeMillis(), Config.WATER_DRY_MILLIS); // expire wet soil (ticks every frame)
+        farmInteraction.applyWaterGrowthBoost(delta); // watered crops grow faster (ticks every frame, before any early-out)
 
         // TAB toggles the inventory popup. While it's open the world is a frozen, dimmed backdrop (a modal):
         // no movement, no tool use, no planting — only browsing/rearranging the bag, or closing it again.
@@ -353,8 +366,13 @@ public class PlayState extends GameState {
         }
 
         // A tool Q-action is playing out: animate it (firing its effect at the effect frame), no movement.
+        // You can pre-fire one more action by clicking/Q'ing another tile mid-swing — it's queued and starts
+        // the instant this swing ends. The hover stays live so the highlight shows where the queued tile is.
         if (toolActionSystem.isActive()) {
             toolActionSystem.update(delta);
+            farmInteraction.updateHover();
+            queueActionIfRequested();
+            if (!toolActionSystem.isActive() && hasQueuedAction) fireQueuedAction();
             updateCamera();
             return;
         }
@@ -391,10 +409,11 @@ public class PlayState extends GameState {
 
         // Facing follows ACTUAL movement: opposing keys keep the current facing; horizontal wins diagonals.
         player.setFacingFromMotion(ix, iy);
+        farmInteraction.updateHover(); // mouse cell — resolve it before Q/click so both aim at the same tile
 
         // USE_TOOL (Q): trigger the current tool's action animation (and its world effect, if any).
         if (input.isJustPressed(InputAction.USE_TOOL)) {
-            toolActionSystem.trigger(player.toolIndex(), player.facing());
+            triggerHeldTool();
             if (toolActionSystem.isActive()) {
                 updateCamera();
                 return;
@@ -403,16 +422,15 @@ public class PlayState extends GameState {
 
         player.stepWalk(delta, ix != 0 || iy != 0);
 
-        farmInteraction.updateHover();
         // Left-click: clicking a hotbar slot (the on-screen bar) selects it for use, re-syncing the held
-        // tool. Otherwise a click in the world acts with what's in hand: a tool swings at the cell in front
-        // of the player (toolIndex() >= 1; 0 is the empty hand), and a held seed sows on a plantable tile.
-        // HARVEST (E) still reaps a mature crop under the mouse.
+        // tool. Otherwise a click in the world acts with what's in hand at the flex target (the cell in front
+        // of the player, or a nearby cell the mouse is aiming at): a tool swings (toolIndex() >= 1; 0 is the
+        // empty hand), a held seed sows on a plantable tile. HARVEST (E) still reaps a mature crop under the mouse.
         if (input.isPrimaryPointerJustPressed()) {
             int clickedSlot = inventoryHud.slotAt(input.pointerX(), input.pointerY(), inventoryItems.length, false);
             if (clickedSlot >= 0) { selectedSlot = clickedSlot; syncSelectedTool(); }
-            else if (player.toolIndex() >= 1) toolActionSystem.trigger(player.toolIndex(), player.facing());
-            else if (farmInteraction.hoverPlantable()) farmInteraction.plantAtHover(selectedSlot);
+            else if (player.toolIndex() >= 1) triggerHeldTool();
+            else farmInteraction.plantAtTarget(player.facing(), selectedSlot);
         }
         if (input.isJustPressed(InputAction.HARVEST)) farmInteraction.harvestAtHover();
 
@@ -436,30 +454,70 @@ public class PlayState extends GameState {
         }
     }
 
-    /** Apply a tool action's world effect at its effect frame, keyed by the blueprint's {@code effect}
-     *  string. Each acts on the cell in front of the player: the hoe tills, the shovel clears a harvest
-     *  lump, the axe removes a non-lump (continuous/trellis) crop. */
+    /** Start the held tool's action at the current flex target, remembering that cell for the effect. */
+    private void triggerHeldTool() {
+        int dir = player.facing();
+        triggerToolAt(player.toolIndex(), dir, farmInteraction.targetCol(dir), farmInteraction.targetRow(dir));
+    }
+
+    /** Trigger a tool action aimed at {@code (col,row)}, capturing the target so the mid-swing effect uses it
+     *  (not the live mouse, which may move during the swing). */
+    private void triggerToolAt(int toolIndex, int dir, int col, int row) {
+        actionCol = col;
+        actionRow = row;
+        toolActionSystem.trigger(toolIndex, dir);
+    }
+
+    /** During a swing, a click or Q on another tile queues one tool action (replacing any already queued —
+     *  only one pending at a time). It targets the live flex cell, captured now so it's locked when it fires. */
+    private void queueActionIfRequested() {
+        if (player.toolIndex() < 1) return; // only tools have a swing to queue behind
+        boolean q = input.isJustPressed(InputAction.USE_TOOL);
+        boolean worldClick = input.isPrimaryPointerJustPressed()
+                && inventoryHud.slotAt(input.pointerX(), input.pointerY(), inventoryItems.length, false) < 0;
+        if (!q && !worldClick) return;
+        int dir = player.facing();
+        queuedToolIndex = player.toolIndex();
+        queuedDir = dir;
+        queuedCol = farmInteraction.targetCol(dir);
+        queuedRow = farmInteraction.targetRow(dir);
+        hasQueuedAction = true;
+    }
+
+    /** Promote the queued action to the active swing (called the instant the previous swing ends). */
+    private void fireQueuedAction() {
+        hasQueuedAction = false;
+        triggerToolAt(queuedToolIndex, queuedDir, queuedCol, queuedRow);
+    }
+
+    /** Apply a tool action's world effect at its effect frame, keyed by the blueprint's {@code effect} string,
+     *  on the cell captured when the action started ({@code actionCol,actionRow}). The hoe tills, the watering
+     *  can wets the soil, the pickaxe un-tills, the shovel clears a harvest lump, the axe removes a non-lump
+     *  (continuous/trellis) crop. The {@code dir} the system passes back isn't needed — the cell is captured. */
     private void applyActionEffect(String effect, int dir) {
         if (effect == null) return;
         switch (effect) {
-            case "till" -> farmInteraction.performTill(dir);
-            case "dig"  -> farmInteraction.digAtFront(dir);
-            case "chop" -> farmInteraction.chopAtFront(dir);
+            case "till"   -> farmInteraction.tillAt(actionCol, actionRow);
+            case "water"  -> farmInteraction.waterAt(actionCol, actionRow);
+            case "untill" -> farmInteraction.untillAt(actionCol, actionRow);
+            case "dig"    -> farmInteraction.digAt(actionCol, actionRow);
+            case "chop"   -> farmInteraction.chopAt(actionCol, actionRow);
             default -> { } // unknown effect string: no-op
         }
     }
 
     @Override
     public void render(SpriteBatch batch) {
-        // What's in hand decides the highlight: a tool marks only the single cell it would act on (the cell
-        // in front of the player); a held seed keeps the wide plant/harvest hover; an empty hand shows none.
-        boolean toolInHand = player.toolIndex() >= 1; // 0 = empty-handed walk
-        boolean cropInHand = itemRegistry.cropIndexFor(inventoryItems[selectedSlot]) >= 0;
+        // What's in hand decides whether to frame the flex target: a tool always frames it; a held seed
+        // frames it only when it's plantable; an empty hand shows no frame.
         int dir = player.facing();
-        worldRenderer.render(batch, gameCamera, player, toolActionSystem,
-                             farmInteraction.hoverCol(), farmInteraction.hoverRow(),
-                             farmInteraction.hoverPlantable(), cropInHand, toolInHand,
-                             farmInteraction.toolTargetCol(dir), farmInteraction.toolTargetRow(dir));
+        int highlightCol = -1, highlightRow = -1;
+        boolean cropInHand = itemRegistry.cropIndexFor(inventoryItems[selectedSlot]) >= 0;
+        if (player.toolIndex() >= 1 || (cropInHand && farmInteraction.targetPlantable(dir))) {
+            highlightCol = farmInteraction.targetCol(dir);
+            highlightRow = farmInteraction.targetRow(dir);
+        }
+        worldRenderer.render(batch, gameCamera, player, toolActionSystem, highlightCol, highlightRow);
         inventoryHud.render(batch, gameCamera.hudCombined(), inventoryItems, inventoryAmounts, selectedSlot,
                             inventoryOpen, inventoryInteraction.draggedItemId(), inventoryInteraction.draggedAmount(),
                             inventoryInteraction.draggedSourceSlot(), inventoryInteraction.hoverSlot(),
@@ -478,7 +536,6 @@ public class PlayState extends GameState {
         try { worldPersistence.save(selectedSlot); }
         catch (Exception e) { Log.error("PlayState", "save on exit failed", e); }
         assets.dispose();        // frees every classpath texture (tilesets, player sheets, UI, crops, icons)
-        worldRenderer.dispose(); // frees the procedurally-generated highlight texture (not in the cache)
         inventoryHud.dispose();  // frees the procedurally-generated dim pixel
     }
 }
