@@ -60,11 +60,14 @@ public final class InventoryHud {
      * dimmed and the bag — the remaining slots as a 3×10 grid — is drawn stacked directly above the hotbar.
      */
     public void render(SpriteBatch batch, Matrix4 hudCombined, int[] items, int[] amounts, int selectedSlot,
-                       boolean open) {
+                       boolean open, int dragItemId, float dragX, float dragY) {
         float w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
         float invW = 1200, invH = invW / 10f; // 120
         float invX = w / 2f - invW / 2f, invY = h * 7f / 8f;
         float slot = invW / 10f;
+        float gap = invH; // one-tile gap between hotbar and bag (must match slotAt)
+        int bagSlots = Math.max(0, items.length - Inventory.HOTBAR);
+        int bagRows = (bagSlots + Inventory.HOTBAR - 1) / Inventory.HOTBAR; // ceil
 
         batch.setProjectionMatrix(hudCombined);
         batch.begin();
@@ -74,26 +77,44 @@ public final class InventoryHud {
             batch.draw(whiteRegion, 0, 0, w, h);
             batch.setColor(Color.WHITE);
         }
-        // Hotbar: the bottom bar with the selection highlight.
+        // Bars: the hotbar always; the bag rows (stacked above, lifted by a one-tile gap so the grid reads as
+        // a separate panel rather than a fourth hotbar row) only when open.
         batch.draw(barRegion, invX, invY, invW, invH);
-        batch.draw(toggleRegion, invX + selectedSlot * slot, invY, slot, invH);
+        if (open) {
+            for (int row = 0; row < bagRows; row++) {
+                batch.draw(barRegion, invX, invY - (row + 1) * invH - gap, invW, invH);
+            }
+        }
+        // Selection highlight on the selected slot's cell — a hotbar slot always, or (when open) a bag slot.
+        if (selectedSlot >= 0 && selectedSlot < items.length) {
+            if (selectedSlot < Inventory.HOTBAR) {
+                batch.draw(toggleRegion, invX + selectedSlot * slot, invY, slot, invH);
+            } else if (open) {
+                int bagIdx = selectedSlot - Inventory.HOTBAR;
+                int r = bagIdx / Inventory.HOTBAR, col = bagIdx % Inventory.HOTBAR;
+                batch.draw(toggleRegion, invX + col * slot, invY - (r + 1) * invH - gap, slot, invH);
+            }
+        }
+        // Slot contents: hotbar always, bag when open.
         for (int i = 0; i < Inventory.HOTBAR && i < items.length; i++) {
             drawSlot(batch, items[i], amounts[i], invX + i * slot, invY, w, h, invW, invH, slot);
         }
-        // Bag: the remaining slots as rows stacked above the hotbar, lifted by a one-tile gap so the grid
-        // reads as a separate panel rather than a fourth hotbar row (row 0 nearest the hotbar, then upward).
         if (open) {
-            float gap = invH; // one inventory tile of breathing room between the hotbar and the bag
-            int bagSlots = Math.max(0, items.length - Inventory.HOTBAR);
-            int bagRows = (bagSlots + Inventory.HOTBAR - 1) / Inventory.HOTBAR; // ceil
             for (int row = 0; row < bagRows; row++) {
                 float rowY = invY - (row + 1) * invH - gap;
-                batch.draw(barRegion, invX, rowY, invW, invH);
                 for (int col = 0; col < Inventory.HOTBAR; col++) {
                     int idx = Inventory.HOTBAR + row * Inventory.HOTBAR + col;
                     if (idx >= items.length) break;
                     drawSlot(batch, items[idx], amounts[idx], invX + col * slot, rowY, w, h, invW, invH, slot);
                 }
+            }
+        }
+        // Floating dragged item: its icon trails the cursor, centred, while a slot is picked up.
+        if (open && dragItemId != 0) {
+            TextureRegion dragIcon = icon(dragItemId);
+            if (dragIcon != null) {
+                float sz = invW / 15f;
+                batch.draw(dragIcon, dragX - sz / 2f, dragY - sz / 2f, sz, sz);
             }
         }
         batch.end();

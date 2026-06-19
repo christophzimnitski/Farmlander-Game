@@ -37,6 +37,7 @@ import save.WorldSave;
 import tools.ToolAction;
 import tools.ToolActionSystem;
 import ui.InventoryHud;
+import ui.InventoryInteraction;
 import tools.data.DefaultToolActionDataSource;
 import tools.data.JsonToolActionDataSource;
 import tools.data.ToolActionDataSource;
@@ -69,6 +70,7 @@ public class PlayState extends GameState {
     private final Texture grassTexture, plowedTexture, tallGrassTexture, wheatTexture, youngWheatTexture,
             playerTexture, chopTexture;
     private final InventoryHud inventoryHud; // screen-space inventory bar (owns its regions + icon cache)
+    private InventoryInteraction inventoryInteraction; // mouse drag/move/select while the popup is open
     private final WorldRenderer worldRenderer; // grass/soil/crops/bushes/player depth-sorted draws
 
     // Every classpath texture is owned by one lazy cache (load-on-first-use + dispose-all).
@@ -233,6 +235,7 @@ public class PlayState extends GameState {
                 DefaultItemDataSource::new), cropTypes);
         grantMissingTools(); // ensure the player holds the tools as items (fresh worlds + pre-tool saves)
         inventoryHud = new InventoryHud(inventoryBarTexture, toggleTexture, fontTexture, itemRegistry, assets);
+        inventoryInteraction = new InventoryInteraction(inventoryItems, inventoryAmounts, inventoryHud, input);
         cropField = new CropField(collisionLayer.cols(), collisionLayer.rows());
         collisionResolver = new CollisionResolver(collisionLayer, cropField, cropGeometry, Config.TILE, COLLISION_ERR);
         worldPersistence = new WorldPersistence(collisionLayer, grassLayer, soil, cropField, player,
@@ -321,9 +324,21 @@ public class PlayState extends GameState {
         autosave(delta); // periodic save so a crash/SIGKILL doesn't lose progress (exit-only save isn't enough)
 
         // TAB toggles the inventory popup. While it's open the world is a frozen, dimmed backdrop (a modal):
-        // no movement, no tool use, no planting — only closing it again.
-        if (input.isJustPressed(InputAction.OPEN_INVENTORY)) inventoryOpen = !inventoryOpen;
-        if (inventoryOpen) { updateCamera(); return; }
+        // no movement, no tool use, no planting — only browsing/rearranging the bag, or closing it again.
+        if (input.isJustPressed(InputAction.OPEN_INVENTORY)) {
+            inventoryOpen = !inventoryOpen;
+            if (!inventoryOpen) inventoryInteraction.cancel();
+        }
+        if (inventoryOpen) {
+            // Mouse: drag/move items, shift to act on the whole stack, click a slot to select it (re-syncing
+            // the held tool), click the dim backdrop to close.
+            InventoryInteraction.Result r = inventoryInteraction.update(selectedSlot, true);
+            selectedSlot = r.selectedSlot;
+            if (r.close) { inventoryOpen = false; inventoryInteraction.cancel(); }
+            syncSelectedTool(); // a move may have changed the selected slot's item
+            updateCamera();
+            return;
+        }
 
         // A tool Q-action is playing out: animate it (firing its effect at the effect frame), no movement.
         if (toolActionSystem.isActive()) {
@@ -357,9 +372,11 @@ public class PlayState extends GameState {
         collisionResolver.resolve(player);
 
         // Hotbar selection (1/3). Changing the selected slot re-syncs the held tool: tool switching now
-        // happens through inventory selection, not a dedicated cycle key.
-        if (input.isJustPressed(InputAction.SELECT_PREV)) { selectedSlot = Math.max(0, selectedSlot - 1); syncSelectedTool(); }
-        if (input.isJustPressed(InputAction.SELECT_NEXT)) { selectedSlot = Math.min(Inventory.HOTBAR - 1, selectedSlot + 1); syncSelectedTool(); }
+        // happens through inventory selection, not a dedicated cycle key. These keys stay within the hotbar,
+        // snapping the selection back in if a click had parked it on a bag slot.
+        int hotbarSel = Math.min(selectedSlot, Inventory.HOTBAR - 1);
+        if (input.isJustPressed(InputAction.SELECT_PREV)) { selectedSlot = Math.max(0, hotbarSel - 1); syncSelectedTool(); }
+        if (input.isJustPressed(InputAction.SELECT_NEXT)) { selectedSlot = Math.min(Inventory.HOTBAR - 1, hotbarSel + 1); syncSelectedTool(); }
 
         // Facing follows ACTUAL movement: opposing keys keep the current facing; horizontal wins diagonals.
         player.setFacingFromMotion(ix, iy);
@@ -413,7 +430,8 @@ public class PlayState extends GameState {
                              farmInteraction.hoverCol(), farmInteraction.hoverRow(),
                              farmInteraction.hoverPlantable());
         inventoryHud.render(batch, gameCamera.hudCombined(), inventoryItems, inventoryAmounts, selectedSlot,
-                            inventoryOpen);
+                            inventoryOpen, inventoryInteraction.draggedItemId(),
+                            inventoryInteraction.cursorX(), inventoryInteraction.cursorY());
     }
 
     @Override
