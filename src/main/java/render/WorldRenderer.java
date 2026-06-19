@@ -63,16 +63,22 @@ public final class WorldRenderer {
 
     /** One world pass: grass → soil → highlight → crops/bushes/player depth-sorted, between begin/end.
      *  Every layer is frustum-culled to {@code camera}'s visible rectangle, so the cost is the on-screen
-     *  cells, not the whole map (the grass grid alone is 400×220). */
+     *  cells, not the whole map (the grass grid alone is 400×220).
+     *
+     *  <p>The highlight depends on what the player holds: with a tool ({@code toolInHand}) only the single
+     *  cell the tool would act on — {@code (toolCol, toolRow)}, in front of the player — is marked; with a
+     *  seed ({@code cropInHand}) the wide plant/harvest hover at {@code (hoverCol, hoverRow)} is shown;
+     *  with an empty hand, nothing. */
     public void render(SpriteBatch batch, GameCamera camera, PlayerCharacter player,
-                       ToolActionSystem toolActions, int hoverCol, int hoverRow, boolean hoverPlantable) {
+                       ToolActionSystem toolActions, int hoverCol, int hoverRow, boolean hoverPlantable,
+                       boolean cropInHand, boolean toolInHand, int toolCol, int toolRow) {
         Rectangle view = camera.worldViewBounds();
         float feetY = player.feetY();
         batch.setProjectionMatrix(camera.worldCombined());
         batch.begin();
         drawArray(batch, grass, grassRegions, view);
         drawSoil(batch, view);
-        drawHighlight(batch, hoverCol, hoverRow, hoverPlantable);
+        drawHighlight(batch, hoverCol, hoverRow, hoverPlantable, cropInHand, toolInHand, toolCol, toolRow);
         drawCrops(batch, feetY, false, view);     // crops rooted above the player -> behind
         drawCollision(batch, feetY, false, view); // bushes behind
         drawPlayer(batch, player, toolActions);
@@ -129,9 +135,20 @@ public final class WorldRenderer {
         }
     }
 
-    /** Highlight the hovered tile: green when plantable, yellow when it holds a mature (harvestable) crop. */
-    private void drawHighlight(SpriteBatch batch, int hoverCol, int hoverRow, boolean hoverPlantable) {
-        if (hoverCol < 0 || hoverRow < 0) return;
+    /** Draw the action highlight. With a tool in hand, mark only the single cell in front of the player that
+     *  the tool would act on (a soft blue square, distinct from planting). With a seed in hand, fall back to
+     *  the wide hover highlight at the mouse cell: green when plantable, yellow on a mature (harvestable)
+     *  crop. With an empty hand, draw nothing. */
+    private void drawHighlight(SpriteBatch batch, int hoverCol, int hoverRow, boolean hoverPlantable,
+                               boolean cropInHand, boolean toolInHand, int toolCol, int toolRow) {
+        if (toolInHand) {
+            if (toolCol < 0 || toolRow < 0 || toolCol >= crops.cols() || toolRow >= crops.rows()) return;
+            batch.setColor(0.35f, 0.65f, 1f, 0.35f);
+            batch.draw(whiteRegion, toolCol * tile, toolRow * tile, tile, tile);
+            batch.setColor(Color.WHITE);
+            return;
+        }
+        if (!cropInHand || hoverCol < 0 || hoverRow < 0) return;
         if (hoverPlantable) {
             batch.setColor(0.3f, 1f, 0.3f, 0.35f);
         } else {

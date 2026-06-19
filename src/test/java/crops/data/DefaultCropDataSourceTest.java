@@ -1,6 +1,7 @@
 package crops.data;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -67,6 +68,18 @@ class DefaultCropDataSourceTest {
     void everyEmittedColumnAndRowIsNonNegative() {
         for (CropBlueprint b : new DefaultCropDataSource().loadCropBlueprints()) {
             assertTrue(b.spriteColumn >= 0 && b.spriteTopRow >= 0, "negative slot for " + b.name);
+        }
+    }
+
+    @Test
+    void berriesAndTrellisCropsAreCategorizedAsNonLumpForTheAxe() {
+        Map<Integer, CropBlueprint> crops = byIndex();
+        // Root crops leave a lump (shovel clears it) — the default for the whole catalog.
+        assertTrue(crops.get(0).leavesLump, "Potato is a lump (root) crop");
+        assertTrue(crops.get(6).leavesLump, "Carrot is a lump (root) crop");
+        // Berries and trellis crops leave no lump — the axe removes them whole.
+        for (int index : new int[]{53, 54, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65}) {
+            assertFalse(crops.get(index).leavesLump, crops.get(index).name + " should be axe-removable (no lump)");
         }
     }
 }

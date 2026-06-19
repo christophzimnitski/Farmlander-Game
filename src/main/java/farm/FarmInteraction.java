@@ -13,10 +13,17 @@ import render.GameCamera;
 import world.DualGridSoil;
 
 /**
- * The player's farming actions and the cell they target: hovering a tile, planting the selected seed,
- * harvesting a mature crop, and tilling the cell in front of the player. Owns the hover state that the
- * renderer's highlight reads. This is where the planting↔inventory coupling lives, made explicit: planting
- * consumes a seed from the held inventory arrays and harvesting banks the produce back into them.
+ * The player's farming actions and the cell they target. Two kinds of targeting live here:
+ * <ul>
+ *   <li><b>mouse-targeted</b> — hovering a tile, planting the selected seed, harvesting a mature crop;</li>
+ *   <li><b>facing-targeted</b> — the tool Q-actions act on the cell <em>in front of the player</em>
+ *       ({@link #toolTargetCol}/{@link #toolTargetRow}): tilling soil ({@link #performTill}), the shovel
+ *       clearing a harvest lump ({@link #digAtFront}), and the axe removing a non-lump crop
+ *       ({@link #chopAtFront}). The renderer reads the same target cell to highlight where a held tool
+ *       would act.</li>
+ * </ul>
+ * This is also where the planting↔inventory coupling lives, made explicit: planting consumes a seed from
+ * the held inventory arrays and harvesting banks the produce back into them.
  */
 public final class FarmInteraction {
     private final DualGridSoil soil;
@@ -81,23 +88,49 @@ public final class FarmInteraction {
         crop.harvested = true; // now renders the hole frame; cell is open for replanting
     }
 
-    /** Till the cell one step in front of the player, which the dual grid renders as a clean 4-tile square.
-     *  "In front" = the player's standing (hitbox-center) cell, offset one tile in the facing direction —
-     *  except <b>down</b>, which targets the cell at the feet (the hitbox <em>bottom</em> edge): the hitbox is
-     *  only half a tile tall and sits at the very bottom of the sprite, so a full cell below its center
-     *  overshoots the feet by up to a tile. Using the bottom edge lands the soil snug at the feet (it drops
-     *  the target a row only when that gap would be large, matching up/left/right's tightness). */
-    public void performTill(int dir) {
+    /** Column of the cell a facing tool action targets: the player's standing (hitbox-center) cell, offset
+     *  one tile left/right when facing that way. Shared by tilling/digging/chopping and the tool highlight. */
+    public int toolTargetCol(int dir) {
         int col = soil.grid().colAtWorldX(player.hitboxCenterX());
+        switch (dir) { case 1 -> col -= 1; case 3 -> col += 1; } // 1 left, 3 right
+        return col;
+    }
+
+    /** Row of the cell a facing tool action targets. Up offsets one row; <b>down</b> targets the cell at the
+     *  feet (the hitbox <em>bottom</em> edge) rather than a full cell below the center: the hitbox is only
+     *  half a tile tall and sits at the very bottom of the sprite, so a full cell below its center overshoots
+     *  the feet by up to a tile. Using the bottom edge lands the target snug at the feet (it drops the target
+     *  a row only when that gap would be large, matching up/left/right's tightness). */
+    public int toolTargetRow(int dir) {
         int row = soil.grid().rowAtWorldY(player.hitboxCenterY());
-        switch (dir) { // 0 up, 1 left, 2 down, 3 right (Y-down: up = -row)
+        switch (dir) { // 0 up, 2 down (Y-down: up = -row)
             case 0 -> row -= 1;
-            case 1 -> col -= 1;
             case 2 -> row = soil.grid().rowAtWorldY(player.hitboxY() + player.hitboxH());
-            case 3 -> col += 1;
         }
+        return row;
+    }
+
+    /** Till the cell one step in front of the player, which the dual grid renders as a clean 4-tile square. */
+    public void performTill(int dir) {
+        int col = toolTargetCol(dir), row = toolTargetRow(dir);
         if (!soil.grid().inBounds(col, row) || collisionResolver.isSolid(col, row)) return;
         soil.till(col, row);
+    }
+
+    /** Shovel: clear a harvest lump — the post-harvest hole a root crop leaves — at the cell in front of the
+     *  player. No-op unless that cell holds a harvested crop. */
+    public void digAtFront(int dir) {
+        int col = toolTargetCol(dir), row = toolTargetRow(dir);
+        PlantedCrop crop = cropField.at(col, row);
+        if (crop != null && crop.harvested) cropField.remove(col, row);
+    }
+
+    /** Axe: remove a non-lump crop — a continuous/trellis crop that never leaves a lump — at the cell in
+     *  front of the player, at any growth stage. No-op on an empty cell or a lump (root) crop. */
+    public void chopAtFront(int dir) {
+        int col = toolTargetCol(dir), row = toolTargetRow(dir);
+        PlantedCrop crop = cropField.at(col, row);
+        if (crop != null && !crop.type.leavesLump) cropField.remove(col, row);
     }
 
     /** Would a crop planted in cell (col,row) immediately overlap the player where they stand now? */

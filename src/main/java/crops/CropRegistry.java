@@ -49,9 +49,11 @@ public final class CropRegistry {
             }
             // null stageDurations -> CropType fills every stage with defaultStageMillis.
             long[] durations = blueprint.stageDurations;
-            types[blueprint.index] = (durations != null)
+            CropType type = (durations != null)
                     ? new CropType(blueprint.index, blueprint.name, stages, durations)
                     : new CropType(blueprint.index, blueprint.name, stages, defaultStageMillis);
+            type.leavesLump = blueprint.leavesLump; // harvest category: shovel-cleared lump vs axe-removed plant
+            types[blueprint.index] = type;
         }
     }
 

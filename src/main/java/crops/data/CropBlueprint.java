@@ -23,6 +23,7 @@ public final class CropBlueprint {
     public int spriteColumn;
     public int spriteTopRow;
     public long[] stageDurations; // optional; null -> default for all stages
+    public boolean leavesLump = true; // true = root crop (shovel clears its lump); false = continuous/trellis (axe removes it)
 
     /** Required no-arg constructor for reflective deserialization (libGDX Json). */
     public CropBlueprint() {

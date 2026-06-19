@@ -321,73 +321,85 @@
     "index": 53,
     "name": "Strawberry",
     "spriteColumn": 20,
-    "spriteTopRow": 5
+    "spriteTopRow": 5,
+    "leavesLump": false
   },
   {
     "index": 54,
     "name": "Blackberry",
     "spriteColumn": 21,
-    "spriteTopRow": 5
+    "spriteTopRow": 5,
+    "leavesLump": false
   },
   {
     "index": 56,
     "name": "Raspberry",
     "spriteColumn": 23,
-    "spriteTopRow": 5
+    "spriteTopRow": 5,
+    "leavesLump": false
   },
   {
     "index": 57,
     "name": "Blueberry",
     "spriteColumn": 24,
-    "spriteTopRow": 5
+    "spriteTopRow": 5,
+    "leavesLump": false
   },
   {
     "index": 58,
     "name": "Grapes",
     "spriteColumn": 25,
-    "spriteTopRow": 5
+    "spriteTopRow": 5,
+    "leavesLump": false
   },
   {
     "index": 59,
     "name": "Green Grapes",
     "spriteColumn": 26,
-    "spriteTopRow": 5
+    "spriteTopRow": 5,
+    "leavesLump": false
   },
   {
     "index": 60,
     "name": "Cherry Tomatoes",
     "spriteColumn": 27,
-    "spriteTopRow": 5
+    "spriteTopRow": 5,
+    "leavesLump": false
   },
   {
     "index": 61,
     "name": "Tomato",
     "spriteColumn": 28,
-    "spriteTopRow": 5
+    "spriteTopRow": 5,
+    "leavesLump": false
   },
   {
     "index": 62,
     "name": "Large Tomato",
     "spriteColumn": 29,
-    "spriteTopRow": 5
+    "spriteTopRow": 5,
+    "leavesLump": false
   },
   {
     "index": 63,
     "name": "Peas",
     "spriteColumn": 30,
-    "spriteTopRow": 5
+    "spriteTopRow": 5,
+    "leavesLump": false
   },
   {
     "index": 64,
     "name": "Hops",
     "spriteColumn": 31,
-    "spriteTopRow": 5
+    "spriteTopRow": 5,
+    "leavesLump": false
   },
   {
     "index": 65,
     "name": "Green Beans",
     "spriteColumn": 32,
-    "spriteTopRow": 5
+    "spriteTopRow": 5,
+    "leavesLump": false
   },
   {
     "index": 66,

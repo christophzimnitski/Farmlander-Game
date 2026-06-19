@@ -383,12 +383,11 @@ public class PlayState extends GameState {
 
         collisionResolver.resolve(player);
 
-        // Hotbar selection (1/3). Changing the selected slot re-syncs the held tool: tool switching now
-        // happens through inventory selection, not a dedicated cycle key. These keys stay within the hotbar,
-        // snapping the selection back in if a click had parked it on a bag slot.
-        int hotbarSel = Math.min(selectedSlot, Inventory.HOTBAR - 1);
-        if (input.isJustPressed(InputAction.SELECT_PREV)) { selectedSlot = Math.max(0, hotbarSel - 1); syncSelectedTool(); }
-        if (input.isJustPressed(InputAction.SELECT_NEXT)) { selectedSlot = Math.min(Inventory.HOTBAR - 1, hotbarSel + 1); syncSelectedTool(); }
+        // Hotbar selection: the number row picks a slot directly (1..9 -> slots 0..8, 0 -> slot 9), replacing
+        // the old prev/next cycling. Selecting re-syncs the held tool — tool switching happens through hotbar
+        // selection — and snaps the highlight back into the hotbar if a click had parked it on a bag slot.
+        int hotbarKey = input.hotbarSlotJustPressed();
+        if (hotbarKey >= 0 && hotbarKey < Inventory.HOTBAR) { selectedSlot = hotbarKey; syncSelectedTool(); }
 
         // Facing follows ACTUAL movement: opposing keys keep the current facing; horizontal wins diagonals.
         player.setFacingFromMotion(ix, iy);
@@ -405,11 +404,14 @@ public class PlayState extends GameState {
         player.stepWalk(delta, ix != 0 || iy != 0);
 
         farmInteraction.updateHover();
-        // Left-click: clicking a hotbar slot (the on-screen bar) selects it for use, re-syncing the held tool;
-        // otherwise it sows the selected seed on a plantable tile. HARVEST (E) reaps a mature crop under the mouse.
+        // Left-click: clicking a hotbar slot (the on-screen bar) selects it for use, re-syncing the held
+        // tool. Otherwise a click in the world acts with what's in hand: a tool swings at the cell in front
+        // of the player (toolIndex() >= 1; 0 is the empty hand), and a held seed sows on a plantable tile.
+        // HARVEST (E) still reaps a mature crop under the mouse.
         if (input.isPrimaryPointerJustPressed()) {
             int clickedSlot = inventoryHud.slotAt(input.pointerX(), input.pointerY(), inventoryItems.length, false);
             if (clickedSlot >= 0) { selectedSlot = clickedSlot; syncSelectedTool(); }
+            else if (player.toolIndex() >= 1) toolActionSystem.trigger(player.toolIndex(), player.facing());
             else if (farmInteraction.hoverPlantable()) farmInteraction.plantAtHover(selectedSlot);
         }
         if (input.isJustPressed(InputAction.HARVEST)) farmInteraction.harvestAtHover();
@@ -434,17 +436,30 @@ public class PlayState extends GameState {
         }
     }
 
-    /** Apply a tool action's world effect at its effect frame. Only tilling has one today; new
-     *  effects (watering, digging, ...) slot in here keyed by the blueprint's {@code effect} string. */
+    /** Apply a tool action's world effect at its effect frame, keyed by the blueprint's {@code effect}
+     *  string. Each acts on the cell in front of the player: the hoe tills, the shovel clears a harvest
+     *  lump, the axe removes a non-lump (continuous/trellis) crop. */
     private void applyActionEffect(String effect, int dir) {
-        if ("till".equals(effect)) farmInteraction.performTill(dir);
+        if (effect == null) return;
+        switch (effect) {
+            case "till" -> farmInteraction.performTill(dir);
+            case "dig"  -> farmInteraction.digAtFront(dir);
+            case "chop" -> farmInteraction.chopAtFront(dir);
+            default -> { } // unknown effect string: no-op
+        }
     }
 
     @Override
     public void render(SpriteBatch batch) {
+        // What's in hand decides the highlight: a tool marks only the single cell it would act on (the cell
+        // in front of the player); a held seed keeps the wide plant/harvest hover; an empty hand shows none.
+        boolean toolInHand = player.toolIndex() >= 1; // 0 = empty-handed walk
+        boolean cropInHand = itemRegistry.cropIndexFor(inventoryItems[selectedSlot]) >= 0;
+        int dir = player.facing();
         worldRenderer.render(batch, gameCamera, player, toolActionSystem,
                              farmInteraction.hoverCol(), farmInteraction.hoverRow(),
-                             farmInteraction.hoverPlantable());
+                             farmInteraction.hoverPlantable(), cropInHand, toolInHand,
+                             farmInteraction.toolTargetCol(dir), farmInteraction.toolTargetRow(dir));
         inventoryHud.render(batch, gameCamera.hudCombined(), inventoryItems, inventoryAmounts, selectedSlot,
                             inventoryOpen, inventoryInteraction.draggedItemId(), inventoryInteraction.draggedAmount(),
                             inventoryInteraction.draggedSourceSlot(), inventoryInteraction.hoverSlot(),

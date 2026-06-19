@@ -19,6 +19,10 @@ public final class CropType {
     public final TextureRegion[] stages;   // stage 0 (sprout) .. last (mature)
     public final long[] stageDurations;    // length = stages.length - 1
     public final int itemId;
+    // Harvest category. true (default) = a root crop that leaves a "lump" (the post-harvest hole frame),
+    // which the shovel clears. false = a continuous/trellis crop that leaves no lump and is removed whole
+    // by the axe. Mutable like stageDurations so the catalog can be re-categorized/tuned (set by the registry).
+    public boolean leavesLump = true;
 
     /** Build a crop with every stage taking the same default time. */
     public CropType(int index, String name, TextureRegion[] stages, long defaultStageMillis) {
