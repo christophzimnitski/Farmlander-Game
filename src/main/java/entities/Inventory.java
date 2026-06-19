@@ -14,6 +14,13 @@ public class Inventory implements Serializable {
     // deserialize after the class was trimmed in the cutover. The fields below are unchanged.
     private static final long serialVersionUID = 1752945795411627435L;
 
+    /** Total slots. The first {@link #HOTBAR} are the selectable bottom bar; the rest are the bag
+     *  (the 3x10 grid revealed by the inventory popup). Saved inventories migrate by length (a short
+     *  old save copies into the low slots; the new tail stays empty). */
+    public static final int SIZE = 40;
+    /** The selectable bottom bar: selection is clamped here, and the selected slot is the held item. */
+    public static final int HOTBAR = 10;
+
     private final int[] inventory;
     private final int[] inventoryAmounts;
     private int selectedSlot = 0;
@@ -66,10 +73,10 @@ public class Inventory implements Serializable {
         return inventoryAmounts;
     }
 
-    /** Move the selected slot by {@code delta}, clamped to the 0..9 bar. */
+    /** Move the selected slot by {@code delta}, clamped to the hotbar (0..HOTBAR-1). */
     public void moveSelection(int delta) {
         this.selectedSlot += delta;
-        if (this.selectedSlot > 9) this.selectedSlot = 9;
+        if (this.selectedSlot > HOTBAR - 1) this.selectedSlot = HOTBAR - 1;
         if (this.selectedSlot < 0) this.selectedSlot = 0;
     }
 

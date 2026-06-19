@@ -71,10 +71,20 @@ public final class PlayerCharacter implements Body {
     public int[] walkActions() { return walkActions; }
     public int currentAnimation() { return currentAnimation; }
 
-    /** Cycle to the next tool and its 4-direction walk set. */
+    /** Cycle to the next tool and its 4-direction walk set. (Retired once hotbar selection drives the tool.) */
     public void cycleTool() {
-        toolIndex = (toolIndex + 1) % playerAnimationArrays.length;
+        setTool((toolIndex + 1) % playerAnimationArrays.length);
+    }
+
+    /**
+     * Set the active tool to a specific {@code playerAnimationArrays} row ({@code 0} = empty-handed walk).
+     * Driven by the hotbar selection: the selected item's {@code toolIndex} becomes the held tool. Out-of-range
+     * indices fall back to empty-handed. Refreshes the shown walk row so the idle frame matches immediately.
+     */
+    public void setTool(int index) {
+        toolIndex = (index >= 0 && index < playerAnimationArrays.length) ? index : 0;
         walkActions = playerAnimationArrays[toolIndex];
+        currentAnimation = walkActions[facing];
     }
 
     /**

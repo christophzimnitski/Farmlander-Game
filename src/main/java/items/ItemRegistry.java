@@ -63,6 +63,17 @@ public final class ItemRegistry {
         return (t == null) ? -1 : t.toolIndex;
     }
 
+    /** The item ids that are tools (have a {@code toolIndex}), in registry order. Used to grant the player
+     *  their tools as inventory items. */
+    public int[] toolItemIds() {
+        int n = 0;
+        for (ItemType t : byId.values()) if (t.isTool()) n++;
+        int[] ids = new int[n];
+        int i = 0;
+        for (ItemType t : byId.values()) if (t.isTool()) ids[i++] = t.id;
+        return ids;
+    }
+
     public int count() {
         return byId.size();
     }

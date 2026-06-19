@@ -197,8 +197,9 @@ public class PlayState extends GameState {
         grassLayer = (sGrass != null) ? placeIntoWorld(sGrass, false)
                                       : GrassGenerator.randomGrass(Config.WORLD_COLS, Config.WORLD_ROWS, Config.TILE, worldSeed);
         soil = new DualGridSoil(placeIntoWorld(sPlanting, true));
-        // Rebuild the live Inventory from saved primitives (it's no longer serialized directly).
-        Inventory inv = new Inventory(sInvItems != null ? sInvItems.length : 10);
+        // Rebuild the live Inventory from saved primitives (it's no longer serialized directly). Fixed at
+        // Inventory.SIZE (hotbar + bag); a shorter old save copies into the low slots, the tail stays empty.
+        Inventory inv = new Inventory(Inventory.SIZE);
         inventoryItems = inv.getInventory();      // shared refs: mutating these mutates the live Inventory
         inventoryAmounts = inv.getInventoryAmounts();
         if (sInvItems != null) {
@@ -229,6 +230,7 @@ public class PlayState extends GameState {
                 () -> new JsonItemDataSource(Gdx.files.classpath("data/items.json")),
                 ItemDataSource::loadItemBlueprints,
                 DefaultItemDataSource::new), cropTypes);
+        grantMissingTools(); // ensure the player holds the tools as items (fresh worlds + pre-tool saves)
         inventoryHud = new InventoryHud(inventoryBarTexture, toggleTexture, fontTexture, itemRegistry, assets);
         cropField = new CropField(collisionLayer.cols(), collisionLayer.rows());
         collisionResolver = new CollisionResolver(collisionLayer, cropField, cropGeometry, Config.TILE, COLLISION_ERR);
@@ -278,6 +280,24 @@ public class PlayState extends GameState {
         float off = -(drawSize - PlayerCharacter.SIZE) / 2f;
         toolActions[blueprint.toolIndex] =
                 new ToolAction(frames, frameCount, blueprint.effectFrame, blueprint.effect, drawSize, off, off);
+    }
+
+    /** Make sure the player actually holds the tools as items: grant any tool id not already in the bag,
+     *  into the first empty slot. Slots are scanned low-first, so tools prefer the hotbar (0..HOTBAR-1)
+     *  where they're selectable. Runs for fresh worlds and for older saves from before tools were items. */
+    private void grantMissingTools() {
+        for (int toolId : itemRegistry.toolItemIds()) {
+            boolean present = false;
+            for (int v : inventoryItems) if (v == toolId) { present = true; break; }
+            if (present) continue;
+            for (int i = 0; i < inventoryItems.length; i++) {
+                if (inventoryItems[i] == 0) { // 0 == InventoryConstants.Nothing (empty slot)
+                    inventoryItems[i] = toolId;
+                    inventoryAmounts[i] = 1;
+                    break;
+                }
+            }
+        }
     }
 
     /** Would the player's feet hitbox collide if shifted by (dx,dy) from where it is now? */
