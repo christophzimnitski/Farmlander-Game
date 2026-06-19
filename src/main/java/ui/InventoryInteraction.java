@@ -27,9 +27,9 @@ public final class InventoryInteraction {
     // Hold-to-grab ramp: the pickup rate (items/sec) starts at BASE and grows exponentially with hold time,
     // capped at MAX — so a quick drag carries ~1 and holding scoops the stack ever faster. Tuned deliberately
     // gentle: a gentle start (~1 item per ~0.4s) ramping to the cap over roughly a second.
-    private static final float RAMP_BASE_RATE = 2.5f;
-    private static final float RAMP_ACCEL = 2f;
-    private static final float RAMP_MAX_RATE = 22f;
+    private static final float RAMP_BASE_RATE = 1f;
+    private static final float RAMP_ACCEL = 1.3f;
+    private static final float RAMP_MAX_RATE = 16f;
 
     private final int[] items, amounts;
     private final InventoryHud hud;
