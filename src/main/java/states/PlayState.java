@@ -412,7 +412,8 @@ public class PlayState extends GameState {
         worldRenderer.render(batch, gameCamera, player, toolActionSystem,
                              farmInteraction.hoverCol(), farmInteraction.hoverRow(),
                              farmInteraction.hoverPlantable());
-        inventoryHud.render(batch, gameCamera.hudCombined(), inventoryItems, inventoryAmounts, selectedSlot);
+        inventoryHud.render(batch, gameCamera.hudCombined(), inventoryItems, inventoryAmounts, selectedSlot,
+                            inventoryOpen);
     }
 
     @Override
@@ -428,5 +429,6 @@ public class PlayState extends GameState {
         catch (Exception e) { Log.error("PlayState", "save on exit failed", e); }
         assets.dispose();        // frees every classpath texture (tilesets, player sheets, UI, crops, icons)
         worldRenderer.dispose(); // frees the procedurally-generated highlight texture (not in the cache)
+        inventoryHud.dispose();  // frees the procedurally-generated dim pixel
     }
 }
