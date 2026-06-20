@@ -137,7 +137,11 @@ public final class FarmInteraction {
     }
 
     // --- Tool world effects. Each acts on an explicit cell (captured at trigger by PlayState, so the effect,
-    //     which fires mid-swing, is unaffected by the mouse moving during the swing). ---
+    //     which fires mid-swing, is unaffected by the mouse moving during the swing).
+    //     Bounds contract: every effect is a safe no-op on an out-of-bounds or ineligible cell. `tillAt`
+    //     checks explicitly (it also needs to reject solid cells); the rest reach that contract by delegating
+    //     to out-of-bounds-tolerant collaborators (ChunkedTileLayer.get / CropField.at return empty for OOB),
+    //     so they need no guard of their own. ---
 
     /** Hoe: till the cell, which the dual grid renders as a clean 4-tile square. No-op out of bounds or on a
      *  solid (collidable) cell. */
