@@ -46,7 +46,7 @@ import tools.data.ToolActionBlueprint;
 import world.ChunkedTileLayer;
 import world.DualGridSoil;
 
-import static utilz.Constants.PlayerActionConstants.playerAnimationArrays;
+import static entities.PlayerAnimations.playerAnimationArrays;
 
 /**
  * The single active {@link GameState}: a coordinator that wires the world subsystems together and drives
@@ -254,7 +254,7 @@ public class PlayState extends GameState {
             for (int v : inventoryItems) if (v == toolId) { present = true; break; }
             if (present) continue;
             for (int i = 0; i < inventoryItems.length; i++) {
-                if (inventoryItems[i] == 0) { // 0 == InventoryConstants.Nothing (empty slot)
+                if (inventoryItems[i] == Inventory.EMPTY) { // empty slot
                     inventoryItems[i] = toolId;
                     inventoryAmounts[i] = 1;
                     break;

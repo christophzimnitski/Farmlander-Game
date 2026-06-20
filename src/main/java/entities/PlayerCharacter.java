@@ -5,7 +5,7 @@ import physics.Body;
 
 import java.util.Arrays;
 
-import static utilz.Constants.PlayerActionConstants.playerAnimationArrays;
+import static entities.PlayerAnimations.playerAnimationArrays;
 
 /**
  * The player avatar: world position, facing, the selected tool, and the hand-stepped walk animation. It is

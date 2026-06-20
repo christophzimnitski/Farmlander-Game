@@ -2,8 +2,6 @@ package entities;
 
 import java.io.Serializable;
 
-import static utilz.Constants.InventoryConstants.Nothing;
-
 /**
  * Inventory data model: items and their amounts per slot, plus the index of the selected slot.
  * Rendering now lives in the libGDX HUD ({@code PlayState.drawHud}); the old Swing
@@ -18,6 +16,9 @@ public class Inventory implements Serializable {
      *  (the 3x10 grid revealed by the inventory popup). Saved inventories migrate by length (a short
      *  old save copies into the low slots; the new tail stays empty). */
     public static final int SIZE = 40;
+    /** Empty-slot sentinel: an empty inventory slot holds this item id. (Formerly
+     *  {@code utilz.Constants.InventoryConstants.Nothing}.) */
+    public static final int EMPTY = 0;
     /** The selectable bottom bar: selection is clamped here, and the selected slot is the held item. */
     public static final int HOTBAR = 10;
 
@@ -29,7 +30,7 @@ public class Inventory implements Serializable {
         inventory = new int[size];
         inventoryAmounts = new int[size];
         for (int i = 0; i < size; i++) {
-            inventory[i] = Nothing;
+            inventory[i] = EMPTY;
             inventoryAmounts[i] = 0;
         }
     }
@@ -43,23 +44,23 @@ public class Inventory implements Serializable {
             }
         }
         for (int i = 0; i < inventory.length; i++) {
-            if (inventory[i] == Nothing && !isProcessComplete) {
+            if (inventory[i] == EMPTY && !isProcessComplete) {
                 inventory[i] = item;
                 inventoryAmounts[i] = amount;
                 break;
             }
         }
-        if (item == Nothing) {
-            inventory[spot] = Nothing;
+        if (item == EMPTY) {
+            inventory[spot] = EMPTY;
             inventoryAmounts[spot] = 0;
         }
     }
 
     public void removeInventoryItem(int spot, int amount) {
-        if (inventory[spot] != Nothing) {
+        if (inventory[spot] != EMPTY) {
             inventoryAmounts[spot] -= amount;
             if (inventoryAmounts[spot] <= 0) {
-                inventory[spot] = Nothing;
+                inventory[spot] = EMPTY;
                 inventoryAmounts[spot] = 0;
             }
         }
