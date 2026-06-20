@@ -387,8 +387,7 @@ public class PlayState extends GameState {
         if (autosaveTimer < Config.AUTOSAVE_INTERVAL) return;
         autosaveTimer = 0;
         try {
-            worldPersistence.save(selectedSlot);
-            Log.info("PlayState", "autosaved");
+            worldPersistence.saveAsync(selectedSlot); // snapshot on this thread; write+fsync on a background thread
         } catch (Exception e) {
             Log.error("PlayState", "autosave failed", e);
         }
@@ -473,7 +472,7 @@ public class PlayState extends GameState {
     public void dispose() {
         // Save on a clean exit (explicit now — no longer hidden inside a lifecycle method). Never let a
         // save error block resource cleanup on shutdown.
-        try { worldPersistence.save(selectedSlot); }
+        try { worldPersistence.saveOnExit(selectedSlot); } // synchronous: must finish before the JVM exits
         catch (Exception e) { Log.error("PlayState", "save on exit failed", e); }
         assets.dispose();        // frees every classpath texture (tilesets, player sheets, UI, crops, icons)
         inventoryHud.dispose();  // frees the procedurally-generated dim pixel
