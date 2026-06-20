@@ -11,6 +11,7 @@ import core.Assets;
 import core.Log;
 import entities.Inventory;
 import items.ItemRegistry;
+import items.ItemType;
 import render.TextureSlicer;
 
 import java.util.HashMap;
@@ -31,8 +32,12 @@ public final class InventoryHud {
     private final SeedIconFactory seedIcons = new SeedIconFactory(); // generated packet icons (no file art)
     private final TextureRegion barRegion;
     private final TextureRegion toggleRegion;
-    private final TextureRegion[] numberRegions;          // game_font.png: 1 row of 11 glyphs, 8x8 each
+    private final TextureRegion[] numberRegions;          // game_font.png row 0: 11 digit/sign glyphs, 8x8 each
+    private final TextureRegion[] letterRegions;          // game_font.png A-Z (cell 41..66 in its 12-wide grid)
     private final Map<Integer, TextureRegion> iconCache = new HashMap<>();
+    // Hover tooltip text metrics (HUD = screen pixels). Glyphs are 8x8 with ~1px padding, so the advance is
+    // tighter than the draw width (the padding overlaps), same trick the digit row uses.
+    private static final float TIP_GLYPH_W = 22f, TIP_GLYPH_H = 26f, TIP_ADV = 15f, TIP_PAD = 10f;
     private final Texture whiteTexture;                   // 1x1 white pixel for the dim-the-world quad
     private final TextureRegion whiteRegion;
 
@@ -47,6 +52,15 @@ public final class InventoryHud {
             TextureRegion r = new TextureRegion(fontTexture, k * 8, 0, 8, 8);
             r.flip(false, true);
             numberRegions[k] = r;
+        }
+        // A-Z live at cells 41..66 of the 12-wide font grid (so 'A' = row 3, col 5). Same white-on-transparent
+        // glyphs as the digits, used for hover-name tooltips.
+        this.letterRegions = new TextureRegion[26];
+        for (int i = 0; i < 26; i++) {
+            int cell = 41 + i;
+            TextureRegion r = new TextureRegion(fontTexture, (cell % 12) * 8, (cell / 12) * 8, 8, 8);
+            r.flip(false, true);
+            letterRegions[i] = r;
         }
         Pixmap pm = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
         pm.setColor(Color.WHITE);
@@ -120,7 +134,52 @@ public final class InventoryHud {
         if (open && dragItemId != 0) {
             drawSlot(batch, dragItemId, dragAmount, dragX - slot / 2f, dragY - invH / 2f, w, h, invW, invH, slot);
         }
+        // Hover tooltip: the name of the item under the cursor — the hotbar always, the bag when open. Skipped
+        // mid-drag (the floating item already shows what's in hand).
+        if (dragItemId == 0) {
+            float mx = Gdx.input.getX(), my = Gdx.input.getY();
+            int hover = slotAt(mx, my, items.length, open);
+            if (hover >= 0 && items[hover] != 0) {
+                ItemType t = itemRegistry.get(items[hover]);
+                if (t != null && t.name != null) drawTooltip(batch, t.name, mx, my, w, h);
+            }
+        }
         batch.end();
+    }
+
+    /** Draw a small dark name plate near the cursor with the item's name (rendered in caps from the bitmap
+     *  font), clamped to stay on screen. */
+    private void drawTooltip(SpriteBatch batch, String name, float mx, float my, float screenW, float screenH) {
+        String text = name.toUpperCase();
+        float boxW = text.length() * TIP_ADV + 2 * TIP_PAD, boxH = TIP_GLYPH_H + 2 * TIP_PAD;
+        float bx = mx + 18, by = my - boxH - 10;          // above-right of the cursor by default
+        if (bx + boxW > screenW) bx = screenW - boxW;
+        if (bx < 0) bx = 0;
+        if (by < 0) by = my + 24;                          // flip below the cursor if it would clip the top
+        if (by + boxH > screenH) by = screenH - boxH;
+        batch.setColor(0.55f, 0.42f, 0.22f, 1f);           // thin border
+        batch.draw(whiteRegion, bx - 2, by - 2, boxW + 4, boxH + 4);
+        batch.setColor(0.06f, 0.07f, 0.09f, 0.94f);        // dark plate
+        batch.draw(whiteRegion, bx, by, boxW, boxH);
+        batch.setColor(Color.WHITE);
+        drawText(batch, text, bx + TIP_PAD, by + TIP_PAD);
+    }
+
+    /** Draw an (already upper-cased) string glyph-by-glyph from the bitmap font; unknown chars (incl. space)
+     *  advance without drawing. */
+    private void drawText(SpriteBatch batch, String upper, float x, float y) {
+        for (int i = 0; i < upper.length(); i++) {
+            TextureRegion g = glyph(upper.charAt(i));
+            if (g != null) batch.draw(g, x, y, TIP_GLYPH_W, TIP_GLYPH_H);
+            x += TIP_ADV;
+        }
+    }
+
+    /** Bitmap-font region for a character: A-Z and 0-9 (0 lives at digit index 10); null for anything else. */
+    private TextureRegion glyph(char c) {
+        if (c >= 'A' && c <= 'Z') return letterRegions[c - 'A'];
+        if (c >= '0' && c <= '9') return numberRegions[c == '0' ? 10 : c - '0'];
+        return null;
     }
 
     /** Screen Y (lower-left) of bag row {@code row}, where row 0 is the visual top and the last row sits one
