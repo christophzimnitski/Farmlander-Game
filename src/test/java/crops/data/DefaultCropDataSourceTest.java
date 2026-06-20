@@ -72,14 +72,16 @@ class DefaultCropDataSourceTest {
     }
 
     @Test
-    void berriesAndTrellisCropsAreCategorizedAsNonLumpForTheAxe() {
+    void aboveGroundCropsAreCategorizedAsNonLumpForTheAxe() {
         Map<Integer, CropBlueprint> crops = byIndex();
         // Root crops leave a lump (shovel clears it) — the default for the whole catalog.
         assertTrue(crops.get(0).leavesLump, "Potato is a lump (root) crop");
         assertTrue(crops.get(6).leavesLump, "Carrot is a lump (root) crop");
-        // Berries and trellis crops leave no lump — the axe removes them whole.
-        for (int index : new int[]{53, 54, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65}) {
+        // Above-ground plants leave no lump — the axe removes them whole: berries, trellis crops, and the
+        // leafy brassica Cauliflower(44).
+        for (int index : new int[]{44, 53, 54, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65}) {
             assertFalse(crops.get(index).leavesLump, crops.get(index).name + " should be axe-removable (no lump)");
         }
+        assertEquals("Cauliflower", crops.get(44).name); // guard the index→name mapping the fix relies on
     }
 }

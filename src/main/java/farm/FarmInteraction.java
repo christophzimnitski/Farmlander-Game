@@ -150,12 +150,13 @@ public final class FarmInteraction {
         soil.till(col, row);
     }
 
-    /** Shovel: clear a harvest lump — the post-harvest hole a root crop leaves — at the cell. Disturbing the
-     *  lump also dries the soil, so any water there is removed with it. No-op unless the cell holds a
-     *  harvested crop. */
+    /** Shovel: clear a harvest lump — the post-harvest hole a <b>root (lump) crop</b> leaves — at the cell.
+     *  Disturbing the lump also dries the soil, so any water there is removed with it. No-op unless the cell
+     *  holds a harvested lump crop; an above-ground (non-lump) crop's remains are the axe's job, not the
+     *  shovel's, so the two tools stay one-per-crop-type. */
     public void digAt(int col, int row) {
         PlantedCrop crop = cropField.at(col, row);
-        if (crop != null && crop.harvested) {
+        if (crop != null && crop.harvested && crop.type.leavesLump) {
             cropField.remove(col, row);
             soil.dry(col, row); // shoveling the lump turns the soil over — its water goes with it
         }
@@ -174,8 +175,9 @@ public final class FarmInteraction {
         soil.water(col, row, System.currentTimeMillis());
     }
 
-    /** Axe: remove a non-lump crop — a continuous/trellis crop that never leaves a lump — at the cell, at any
-     *  growth stage. No-op on an empty cell or a lump (root) crop. */
+    /** Axe: remove an above-ground (non-lump) crop — a berry/trellis/leafy plant that never leaves a dirt
+     *  lump — at the cell, at any growth stage (standing or harvested remains alike). No-op on an empty cell
+     *  or a lump (root) crop. */
     public void chopAt(int col, int row) {
         PlantedCrop crop = cropField.at(col, row);
         if (crop != null && !crop.type.leavesLump) cropField.remove(col, row);

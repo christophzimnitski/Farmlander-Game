@@ -51,12 +51,15 @@ public final class DefaultCropDataSource implements CropDataSource {
     public static final int LAST_BAND_FIRST_COLUMN = 29;
 
     /**
-     * Crops that leave <em>no</em> harvest lump — the berries (continuous croppers) and the trellis crops.
-     * The axe removes these whole; everything else is a root crop that leaves a lump for the shovel. By
-     * index: Strawberry(53), Blackberry(54), Raspberry(56), Blueberry(57), Grapes(58), Green Grapes(59),
-     * Cherry Tomatoes(60), Tomato(61), Large Tomato(62), Peas(63), Hops(64), Green Beans(65).
+     * Crops that leave <em>no</em> harvest lump — above-ground plants the axe removes whole, as opposed to
+     * root crops, which leave a dirt lump for the shovel. Covers the berries (continuous croppers) and the
+     * trellis crops, plus leafy brassicas whose remains are a stalk, not a buried root. By index:
+     * Cauliflower(44), Strawberry(53), Blackberry(54), Raspberry(56), Blueberry(57), Grapes(58),
+     * Green Grapes(59), Cherry Tomatoes(60), Tomato(61), Large Tomato(62), Peas(63), Hops(64), Green Beans(65).
+     * (Other leafy crops — broccoli, cabbage, lettuce, kale… — are still defaulted to lumps; broaden this set
+     * if they should be axe-cleared too.)
      */
-    static final Set<Integer> NON_LUMP_CROPS = Set.of(53, 54, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65);
+    static final Set<Integer> NON_LUMP_CROPS = Set.of(44, 53, 54, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65);
 
     /**
      * Display names by crop index, carried over verbatim from the original project's crop catalog.
