@@ -30,7 +30,7 @@ import physics.CollisionResolver;
 import render.GameCamera;
 import render.TextureSlicer;
 import render.WorldRenderer;
-import save.CropSave;
+import save.FarmWorldLoader;
 import save.SaveManager;
 import save.WorldPersistence;
 import save.WorldSave;
@@ -44,7 +44,6 @@ import tools.data.ToolActionDataSource;
 import tools.data.ToolActionBlueprint;
 import world.ChunkedTileLayer;
 import world.DualGridSoil;
-import world.GrassGenerator;
 
 import static utilz.Constants.PlayerActionConstants.playerAnimationArrays;
 
@@ -169,68 +168,23 @@ public class PlayState extends GameState {
         // At the effect frame, the system calls back into applyActionEffect (today: till).
         toolActionSystem = new ToolActionSystem(toolActions, ANIM_FRAME_TIME, this::applyActionEffect);
 
-        int[][] sCollision, sPlanting, sGrass;
-        float px, py;
-        int animation;
-        int[] selected;
-        int[] sInvItems, sInvAmounts;
-        int sSelectedSlot;
-        // Crops read from the save (null when there's no save → none to restore).
-        CropSave[] sCrops;
-        // One read through the swappable SaveFormat seam: SaveManager picks binary vs. the legacy
-        // positional Java-serialization reader by sniffing the file's magic, so old saves migrate.
+        // One read through the swappable SaveFormat seam (SaveManager sniffs binary vs. the legacy
+        // positional reader, so old saves migrate), then FarmWorldLoader decodes the result — or mints a
+        // fresh world when there's no save — into ready-to-use layers, soil, seed, inventory, spawn, crops.
         WorldSave ws = SaveManager.load(SaveManager.SAVE_FILE);
-        if (ws != null) {
-            sCollision = ws.collision;
-            sPlanting  = ws.planting;
-            sGrass     = ws.grass;
-            sInvItems  = ws.invItems;
-            sInvAmounts = ws.invAmounts;
-            sSelectedSlot = ws.invToggle;
-            px = ws.playerX;
-            py = ws.playerY;
-            selected = ws.walkActions;
-            animation = ws.currentAnimation;
-            sCrops = ws.crops;
-        } else {
-            // Fresh world: a seeded grass field (deterministic) and empty collision/soil at world size.
-            sGrass = null; // signals "generate" below
-            sPlanting = null;
-            sCollision = null;
-            sInvItems = null;
-            sInvAmounts = null;
-            sSelectedSlot = 0;
-            px = 2000;
-            py = 800;
-            animation = 34;
-            selected = new int[]{32, 33, 34, 35};
-            sCrops = null;
-        }
-        // The world's seed: keep the saved one, or mint a fresh seed for a new world (or a pre-seed save).
-        worldSeed = (ws != null && ws.worldSeed != 0) ? ws.worldSeed : System.nanoTime();
-        // All layers live on one bounded grid (WORLD_COLS x WORLD_ROWS). Saved grids are placed into it —
-        // an old 40x22 save lands in the corner; a current full-size save fills it. The tilled layer is
-        // normalized to 0/1 (any legacy autotile index becomes "tilled?"); the dual grid derives the tiles.
-        collisionLayer = placeIntoWorld(sCollision, false);
-        grassLayer = (sGrass != null) ? placeIntoWorld(sGrass, false)
-                                      : GrassGenerator.randomGrass(Config.WORLD_COLS, Config.WORLD_ROWS, Config.TILE, worldSeed);
-        soil = new DualGridSoil(placeIntoWorld(sPlanting, true));
-        // Rebuild the live Inventory from saved primitives (it's no longer serialized directly). Fixed at
-        // Inventory.SIZE (hotbar + bag); a shorter old save copies into the low slots, the tail stays empty.
-        Inventory inv = new Inventory(Inventory.SIZE);
-        inventoryItems = inv.getInventory();      // shared refs: mutating these mutates the live Inventory
-        inventoryAmounts = inv.getInventoryAmounts();
-        if (sInvItems != null) {
-            for (int i = 0; i < inventoryItems.length && i < sInvItems.length; i++) {
-                inventoryItems[i] = sInvItems[i];
-                inventoryAmounts[i] = sInvAmounts[i];
-            }
-        }
-        inv.moveSelection(sSelectedSlot - inv.getSelectedSlot());
-        selectedSlot = inv.getSelectedSlot();
-        lastHotbarSlot = selectedSlot; // getSelectedSlot is always a hotbar slot — a safe starting hand
+        FarmWorldLoader.LoadedWorld loaded =
+                new FarmWorldLoader(Config.WORLD_COLS, Config.WORLD_ROWS, Config.TILE).load(ws);
+        collisionLayer = loaded.collision();
+        grassLayer = loaded.grass();
+        soil = loaded.soil();
+        worldSeed = loaded.worldSeed();
+        inventoryItems = loaded.inventoryItems();     // shared refs: mutating these mutates the loaded inventory
+        inventoryAmounts = loaded.inventoryAmounts();
+        selectedSlot = loaded.selectedSlot();
+        lastHotbarSlot = selectedSlot; // selectedSlot is always a hotbar slot — a safe starting hand
         // Player avatar: position + walk sheet, recovering tool/facing from the saved animation state.
-        player = new PlayerCharacter(px, py, animation, selected, playerFrames);
+        player = new PlayerCharacter(loaded.playerX(), loaded.playerY(), loaded.animation(),
+                loaded.walkActions(), playerFrames);
 
         // Crop subsystem: catalog from crops.png, an empty field sized to the world, and a 1x1
         // white pixel for the hover highlight (kept on the main SpriteBatch — no ShapeRenderer).
@@ -256,7 +210,7 @@ public class PlayState extends GameState {
         collisionResolver = new CollisionResolver(collisionLayer, cropField, cropGeometry, Config.TILE, COLLISION_ERR);
         worldPersistence = new WorldPersistence(collisionLayer, grassLayer, soil, cropField, player,
                 inventoryItems, inventoryAmounts, cropRegistry, worldSeed);
-        worldPersistence.restoreCrops(sCrops);
+        worldPersistence.restoreCrops(loaded.crops());
         worldRenderer = new WorldRenderer(grassLayer, soil, collisionLayer, cropField, cropGeometry, Config.TILE,
                 grassRegions, soilRegions, collisionRegions, wateredRegions, frameRegion);
         farmInteraction = new FarmInteraction(soil, cropField, cropRegistry, itemRegistry, cropGeometry,
@@ -267,24 +221,6 @@ public class PlayState extends GameState {
     /** Load a classpath texture with Nearest filtering (crisp pixel art, no color softening). */
     private Texture loadTexture(String path) {
         return assets.get(path); // lazy load + cache + dispose all handled by Assets
-    }
-
-    /** Build a world-sized layer and copy a saved grid into it (top-left aligned). A null source yields an
-     *  empty layer; a smaller source (an old 40x22 save) occupies the corner. When {@code asTilledFlag},
-     *  any nonzero source cell normalizes to 1 (legacy autotile indices → "tilled?"); the soil grid is a
-     *  plain 0/1 flag (watering is a separate, unsaved runtime layer). */
-    private static ChunkedTileLayer placeIntoWorld(int[][] src, boolean asTilledFlag) {
-        ChunkedTileLayer layer = new ChunkedTileLayer(Config.WORLD_COLS, Config.WORLD_ROWS, Config.TILE);
-        if (src == null) return layer;
-        int cols = Math.min(src.length, Config.WORLD_COLS);
-        for (int c = 0; c < cols; c++) {
-            int rows = Math.min(src[c].length, Config.WORLD_ROWS);
-            for (int r = 0; r < rows; r++) {
-                int v = asTilledFlag ? (src[c][r] != 0 ? 1 : 0) : src[c][r];
-                layer.set(c, r, v);
-            }
-        }
-        return layer;
     }
 
     /** Turn a data {@link ToolActionBlueprint} into a live {@link ToolAction}, slicing from the named sheet
