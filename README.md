@@ -61,7 +61,7 @@ Five tools, each held like an inventory item and selected from the hotbar:
 | Watering Can | Water tilled soil — wet soil grows its crop ~30% faster, and dries after 30s |
 | Pickaxe | Un-till a cell back to bare ground |
 | Shovel | Clear the leftover "lump" a harvested root crop leaves behind |
-| Axe | Remove an above-ground crop (leafy/fruit/berry — anything that isn't a root) |
+| Axe | Remove an above-ground crop (leafy/fruit/berry — anything that isn't a root); if it's fully grown, this also reaps its produce |
 
 ### Crops & seeds
 
