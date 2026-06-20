@@ -176,11 +176,15 @@ public final class FarmInteraction {
     }
 
     /** Axe: remove an above-ground (non-lump) crop — a berry/trellis/leafy plant that never leaves a dirt
-     *  lump — at the cell, at any growth stage (standing or harvested remains alike). No-op on an empty cell
-     *  or a lump (root) crop. */
+     *  lump — at the cell, at any growth stage. A <b>fully grown</b> plant is reaped as it's cut: its produce
+     *  goes to the inventory, then the plant is removed (a one-swing harvest). An unripe plant is just
+     *  destroyed (no produce), and a plant already reaped by hand (E) isn't paid out twice. No-op on an empty
+     *  cell or a lump (root) crop. */
     public void chopAt(int col, int row) {
         PlantedCrop crop = cropField.at(col, row);
-        if (crop != null && !crop.type.leavesLump) cropField.remove(col, row);
+        if (crop == null || crop.type.leavesLump) return;
+        if (!crop.harvested && crop.isMature(System.currentTimeMillis())) addInventory(crop.type.itemId, 1);
+        cropField.remove(col, row);
     }
 
     /** Watered soil grows its crop faster: pull each watered crop's growth clock earlier by

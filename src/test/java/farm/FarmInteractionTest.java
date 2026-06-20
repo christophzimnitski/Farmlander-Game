@@ -1,8 +1,11 @@
 package farm;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import crops.CropField;
+import crops.CropType;
 import entities.PlayerCharacter;
 import org.junit.jupiter.api.Test;
 import world.ChunkedTileLayer;
@@ -53,5 +56,48 @@ class FarmInteractionTest {
         f.setHoverCell(7, 5); // two cells right of the down-facing cell (5,5) → beyond the 1-tile flex
         assertEquals(5, f.targetCol(2));
         assertEquals(5, f.targetRow(2));
+    }
+
+    // --- chopAt: the axe reaps + clears an above-ground (non-lump) crop. Touches only the crop field and the
+    //     inventory arrays, so the GL collaborators stay null. ---
+
+    private static FarmInteraction farmWith(CropField field, int[] items, int[] amounts) {
+        DualGridSoil soil = new DualGridSoil(new ChunkedTileLayer(COLS, ROWS, TILE));
+        PlayerCharacter player =
+                new PlayerCharacter(380f, 281f, 34, new int[]{32, 33, 34, 35}, new TextureRegion[36][9]);
+        return new FarmInteraction(soil, field, null, null, null, null, null, player, items, amounts);
+    }
+
+    private static CropType aboveGroundCrop(int index, String name) {
+        CropType c = new CropType(index, name, new TextureRegion[5], 1000L); // 5 frames → grown at stage 3
+        c.leavesLump = false; // above-ground → the axe's job
+        return c;
+    }
+
+    @Test
+    void axeReapsAGrownAboveGroundCropThenClearsIt() {
+        CropField field = new CropField(COLS, ROWS);
+        int[] items = new int[10], amounts = new int[10];
+        FarmInteraction f = farmWith(field, items, amounts);
+        field.plant(3, 3, aboveGroundCrop(61, "Tomato"), System.currentTimeMillis() - 1_000_000L); // long mature
+
+        f.chopAt(3, 3);
+
+        assertEquals(161, items[0], "produce (100+index) banked when a grown plant is axed");
+        assertEquals(1, amounts[0]);
+        assertNull(field.at(3, 3), "the plant is removed");
+    }
+
+    @Test
+    void axeDestroysAnUnripePlantWithoutProduce() {
+        CropField field = new CropField(COLS, ROWS);
+        int[] items = new int[10], amounts = new int[10];
+        FarmInteraction f = farmWith(field, items, amounts);
+        field.plant(3, 3, aboveGroundCrop(61, "Tomato"), System.currentTimeMillis()); // just planted → unripe
+
+        f.chopAt(3, 3);
+
+        assertEquals(0, items[0], "no produce from an unripe plant");
+        assertNull(field.at(3, 3), "but it's still cleared");
     }
 }
