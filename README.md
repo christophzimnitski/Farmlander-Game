@@ -48,6 +48,9 @@ cells. The framed cell shows where the action will land.
 stack); **Shift**-drag grabs the whole stack; **Shift**-click quick-transfers between
 hotbar and bag; click a slot to select it, click the dimmed backdrop to close.
 
+**Item names:** hover an item — in the hotbar or the open bag — to see its name on a
+small plate by the cursor.
+
 ### Tools
 
 Five tools, each held like an inventory item and selected from the hotbar:
