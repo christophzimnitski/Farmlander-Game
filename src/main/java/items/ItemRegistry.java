@@ -51,6 +51,15 @@ public final class ItemRegistry {
         return t == null ? null : t.iconPath;
     }
 
+    /** Every item that declares a HUD icon, as {@code id -> path} (registry order). Lets a boot-time check
+     *  verify the art actually exists, so a missing {@code food/<id>.png} surfaces as a startup WARN instead
+     *  of a silently blank slot. */
+    public Map<Integer, String> iconPaths() {
+        Map<Integer, String> paths = new LinkedHashMap<>();
+        for (ItemType t : byId.values()) if (t.iconPath != null) paths.put(t.id, t.iconPath);
+        return paths;
+    }
+
     /** The crop index a held item plants, or {@code -1} if it isn't a crop seed. */
     public int cropIndexFor(int id) {
         ItemType t = byId.get(id);

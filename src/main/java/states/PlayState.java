@@ -16,6 +16,7 @@ import crops.CropType;
 import crops.data.CropDataSource;
 import crops.data.DefaultCropDataSource;
 import crops.data.JsonCropDataSource;
+import data.AssetManifest;
 import data.ProbeLoader;
 import entities.Inventory;
 import entities.PlayerCharacter;
@@ -203,6 +204,10 @@ public class PlayState extends GameState {
                 () -> new JsonItemDataSource(Gdx.files.classpath("data/items.json")),
                 ItemDataSource::loadItemBlueprints,
                 DefaultItemDataSource::new), cropTypes);
+        // Boot-time asset check: warn for any item whose icon art is missing, so it surfaces here at startup
+        // rather than as a silently-blank slot when the item is first shown (InventoryHud caches the miss).
+        AssetManifest.missing(itemRegistry.iconPaths(), p -> Gdx.files.classpath(p).exists())
+                .forEach((id, path) -> Log.warn("Assets", "item " + id + " icon missing: " + path));
         grantMissingTools(); // ensure the player holds the tools as items (fresh worlds + pre-tool saves)
         inventoryHud = new InventoryHud(inventoryBarTexture, toggleTexture, fontTexture, itemRegistry, assets);
         inventoryInteraction = new InventoryInteraction(inventoryItems, inventoryAmounts, inventoryHud, input);
