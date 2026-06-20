@@ -21,12 +21,14 @@ import java.util.Map;
  * its stack amount drawn glyph-by-glyph from the bitmap font. Self-contained — give it the matrix and the
  * current inventory and it draws a complete HUD pass (its own {@code begin}/{@code end}).
  *
- * <p>Item icons are loaded on demand and cached (null cached too, so a missing icon isn't retried). Their
- * textures come from the shared {@link Assets} cache, so {@code PlayState.dispose} frees them with the rest.
+ * <p>Item icons are loaded on demand and cached (null cached too, so a missing icon isn't retried). Most
+ * come from the shared {@link Assets} cache (so {@code PlayState.dispose} frees them); seeds have no file
+ * art, so their packet icons are composited by {@link SeedIconFactory} (owned + freed here).
  */
 public final class InventoryHud {
     private final ItemRegistry itemRegistry;
     private final Assets assets; // icon textures live here; disposed by PlayState with everything else
+    private final SeedIconFactory seedIcons = new SeedIconFactory(); // generated packet icons (no file art)
     private final TextureRegion barRegion;
     private final TextureRegion toggleRegion;
     private final TextureRegion[] numberRegions;          // game_font.png: 1 row of 11 glyphs, 8x8 each
@@ -181,9 +183,11 @@ public final class InventoryHud {
         }
     }
 
-    /** Free the procedurally-generated dim pixel (the bar/toggle/font/icon textures live in the Assets cache). */
+    /** Free the procedurally-generated textures owned here — the dim pixel and the seed packets (the
+     *  bar/toggle/font/produce-icon textures live in the Assets cache, freed by PlayState). */
     public void dispose() {
         whiteTexture.dispose();
+        seedIcons.dispose();
     }
 
     // --- layout / hit-testing (shared by render() and the mouse interaction) ---
@@ -235,20 +239,26 @@ public final class InventoryHud {
         return -1;
     }
 
-    /** HUD icon for an item, loaded on demand (cached, null cached too so we don't retry). The path comes
-     *  from the ItemRegistry (which applies the food/<id>.png convention for crop items). */
+    /** HUD icon for an item, resolved on demand (cached, null cached too so we don't retry). Seeds get a
+     *  generated packet icon (the crop overlaid on a paper packet); everything else loads from the
+     *  ItemRegistry's icon path (the food/<id>.png convention for produce, a swatch for tools). */
     private TextureRegion icon(int id) {
         if (iconCache.containsKey(id)) return iconCache.get(id);
-        TextureRegion region = null;
-        String path = itemRegistry.iconPath(id);
-        try {
-            if (path == null) { iconCache.put(id, null); return null; }
-            Texture t = assets.get(path); // owned + deduped by the Assets cache
-            region = new TextureRegion(t);
-            region.flip(false, true);
-        } catch (Exception e) {
-            // Missing/unreadable icon art — cache the null so we don't retry, but surface which one.
-            Log.warn("InventoryHud", "no icon for item " + id + " (" + path + ")", e);
+        TextureRegion region;
+        if (itemRegistry.cropIndexFor(id) >= 0) { // a seed: composite a packet (caches in the factory too)
+            region = seedIcons.get(id, itemRegistry.seedOverlayPath(id));
+        } else {
+            region = null;
+            String path = itemRegistry.iconPath(id);
+            try {
+                if (path == null) { iconCache.put(id, null); return null; }
+                Texture t = assets.get(path); // owned + deduped by the Assets cache
+                region = new TextureRegion(t);
+                region.flip(false, true);
+            } catch (Exception e) {
+                // Missing/unreadable icon art — cache the null so we don't retry, but surface which one.
+                Log.warn("InventoryHud", "no icon for item " + id + " (" + path + ")", e);
+            }
         }
         iconCache.put(id, region);
         return region;
