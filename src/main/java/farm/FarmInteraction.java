@@ -37,6 +37,7 @@ public final class FarmInteraction {
     private final int[] inventoryItems, inventoryAmounts; // shared live refs with the Inventory/PlayState
 
     private int hoverCol = -1, hoverRow = -1; // raw tile under the mouse this frame (drives aim flex + harvest)
+    private float boostCarryMillis = 0f; // sub-ms growth-boost remainder, carried between frames (see applyWaterGrowthBoost)
 
     public FarmInteraction(DualGridSoil soil, CropField cropField, CropRegistry cropRegistry,
                            ItemRegistry itemRegistry, CropGeometry cropGeometry,
@@ -173,8 +174,14 @@ public final class FarmInteraction {
      *  {@code WATER_GROWTH_BONUS} of this frame's elapsed time (so it ages at 1 + bonus speed while wet).
      *  Walks only the watered cells (sparse), so the cost is independent of field size. */
     public void applyWaterGrowthBoost(float delta) {
-        long extra = (long) (Config.WATER_GROWTH_BONUS * delta * 1000f); // ms of bonus age this frame
+        // Accumulate the bonus as a float and only ever spend whole milliseconds, carrying the sub-ms
+        // remainder to the next frame. A naive per-frame (long) cast truncates to 0 once the frame is short
+        // enough (BONUS*delta*1000 < 1, i.e. > ~330fps at 0.30), silently killing the boost at high refresh
+        // rates; carrying the remainder makes the total bonus frame-rate-independent.
+        boostCarryMillis += Config.WATER_GROWTH_BONUS * delta * 1000f;
+        long extra = (long) boostCarryMillis; // whole ms of bonus age to grant this frame
         if (extra <= 0) return;
+        boostCarryMillis -= extra;
         long now = System.currentTimeMillis();
         soil.forEachWatered((col, row) -> {
             PlantedCrop crop = cropField.at(col, row);
