@@ -1,8 +1,5 @@
 package utilz;
 
-import static utilz.Constants.PlayerActionConstants.*;
-import static utilz.Constants.PlayerActionConstants.WALK_DIGGING_RIGHT;
-
 public class Constants {
     public static class InventoryConstants {
         /**

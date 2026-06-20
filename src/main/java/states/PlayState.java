@@ -49,12 +49,16 @@ import world.GrassGenerator;
 import static utilz.Constants.PlayerActionConstants.playerAnimationArrays;
 
 /**
- * Renders your real saved world (grass + tilled soil + collidables, depth-sorted
- * around the player), the player with a hand-stepped walk animation and AABB
- * collision, and the screen-space inventory HUD. All from your save in
- * ~/.farmlander, faithful to the Swing layers.
+ * The single active {@link GameState}: a coordinator that wires the world subsystems together and drives
+ * them each frame. {@code update} reads input, moves/collides the player, runs tool actions and
+ * planting/harvesting against the flex target, ages watered soil + applies its growth boost, handles the
+ * inventory popup, and autosaves; {@code render} draws the world (grass + dual-grid soil + crops +
+ * collidables, depth-sorted around the player) and the screen-space inventory HUD. World state loads from
+ * the binary save in {@code ~/.farmlander} on construction and saves on autosave + clean exit.
  *
- * Deferred: crops (none planted), tool actions / planting interaction.
+ * <p>The constructor still owns the whole load path inline — texture slicing, save parse, grid placement,
+ * registry + subsystem wiring — which keeps it long and untestable; extracting a {@code FarmWorldLoader}
+ * is tracked tech debt (see the code-health backlog).
  */
 public class PlayState extends GameState {
     // Game-tuning dials (world size, tile size, move speed, autosave/grow timers) live in core.Config.
@@ -70,7 +74,7 @@ public class PlayState extends GameState {
     private final Texture grassTexture, plowedTexture, tallGrassTexture, wheatTexture, youngWheatTexture,
             playerTexture, chopTexture;
     private final InventoryHud inventoryHud; // screen-space inventory bar (owns its regions + icon cache)
-    private InventoryInteraction inventoryInteraction; // mouse drag/move/select while the popup is open
+    private final InventoryInteraction inventoryInteraction; // mouse drag/move/select while the popup is open
     private final WorldRenderer worldRenderer; // grass/soil/crops/bushes/player depth-sorted draws
 
     // Every classpath texture is owned by one lazy cache (load-on-first-use + dispose-all).
@@ -82,7 +86,7 @@ public class PlayState extends GameState {
     private final long worldSeed; // seed that generated this bounded world's grass (persisted in the save)
     private final DualGridSoil soil;
     private final CollisionResolver collisionResolver;
-    private PlayerCharacter player; // position, facing, tool, walk animation; also the collision Body
+    private final PlayerCharacter player; // position, facing, tool, walk animation; also the collision Body
     private final int[] inventoryItems, inventoryAmounts; // live refs into the Inventory built at load
     private int selectedSlot;
     private int lastHotbarSlot; // the hotbar slot to restore on inventory close — the hand never holds a bag slot
@@ -92,15 +96,15 @@ public class PlayState extends GameState {
     private final CropRegistry cropRegistry;
     private final ItemRegistry itemRegistry;
     private final CropField cropField;
-    private FarmInteraction farmInteraction; // hover targeting + plant/harvest/till
-    private WorldPersistence worldPersistence; // save snapshot + crop restore
+    private final FarmInteraction farmInteraction; // hover targeting + plant/harvest/till
+    private final WorldPersistence worldPersistence; // save snapshot + crop restore
     private float autosaveTimer = 0; // counts up to Config.AUTOSAVE_INTERVAL, then saves
     private boolean inventoryOpen = false; // TAB toggles the inventory popup; world is frozen while it's open
 
     // Data-driven tool Q-actions, indexed by toolIndex (null = no action for that tool). ToolActionSystem
     // owns the live animation/effect state; the array is filled by buildToolAction during construction.
     private final ToolAction[] toolActions = new ToolAction[playerAnimationArrays.length];
-    private ToolActionSystem toolActionSystem;
+    private final ToolActionSystem toolActionSystem;
     // The cell the in-flight tool action acts on, captured at trigger so the mid-swing effect isn't shifted by
     // the mouse moving during the swing. Plus one optional action queued by clicking during a swing: it fires
     // the instant the swing ends, and only one may be queued at a time (a later click replaces it, no stacking).

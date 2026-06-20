@@ -20,13 +20,17 @@ project root does — the two are equivalent.
 
 ## What to expect
 
-- Native **Java Swing desktop GUI** (Gradle `application` plugin, `mainClass = main.Main`, Java 21 toolchain via the committed wrapper). A window opens on the primary display.
-- The game loop runs until the window is closed. If you need to keep working while it runs, launch it in the **background**; on window close the JVM exits cleanly (`BUILD SUCCESSFUL`) and a shutdown hook prints `Objects saved to file.`
-- The app prints the inventory array (e.g. `[100, 0, 0, ...]`) each update — that's expected debug output, not an error.
+- Native **libGDX desktop app** (LWJGL3 backend; Gradle `application` plugin, `mainClass = core.DesktopLauncher`, Java 21 toolchain via the committed wrapper). On macOS the run adds `-XstartOnFirstThread` (GLFW must run on the first thread). A window opens on the primary display.
+- The game loop runs until the window is closed. If you need to keep working while it runs, launch it in the **background**; on window close the JVM exits cleanly (`BUILD SUCCESSFUL`) and `PlayState.dispose()` saves the world (look for a `[INFO] PlayState: autosaved` line during play, too).
+- Logging goes through `core.Log` (`[INFO]/[WARN]/[ERROR]` lines). A `[WARN] SaveManager: could not read save ...; starting fresh` line is the loader gracefully handling a missing/corrupt save, **not** a crash.
 
 ## Saves
 
-Saves live at `~/.farmlander/objects.dat` (outside the repo), referenced via `LevelManager.SAVE_FILE`.
+Saves live at `~/.farmlander/objects.dat` (outside the repo), referenced via `save.SaveManager.SAVE_FILE`. Writes are atomic (temp file + fsync + rename), so an interrupted write can't truncate a good save.
+
+## Important: do NOT `pkill` a running game that holds a precious save
+
+`pkill`/SIGTERM does **not** trigger a clean save — closing the window does. Ask the user to close via the window's X when a recovered or hard-won save is live. Use `pgrep -f DesktopLauncher` to check whether the game is running.
 
 ## Troubleshooting
 
