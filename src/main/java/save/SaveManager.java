@@ -6,8 +6,9 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 
 /**
  * Owns world-save file IO and which {@link SaveFormat} to use. Writes are always the owned binary
@@ -42,14 +43,33 @@ public final class SaveManager {
         }
     }
 
-    /** Write {@code data} to {@code path} in the binary format, creating the parent dir as needed. */
+    /**
+     * Write {@code data} to {@code path} in the binary format, <b>atomically</b>: the bytes go to a sibling
+     * {@code .tmp} file (flushed to disk), which is then renamed over the real save in one step. So an
+     * interruption mid-write — a crash, power loss, or a force-quit during the exit-save or an autosave —
+     * can only ever damage the temp file; the previous good save is left intact rather than truncated.
+     * Creates the parent dir as needed.
+     */
     public static void save(WorldSave data, String path) {
-        File parent = new File(path).getParentFile();
+        File target = new File(path);
+        File parent = target.getParentFile();
         if (parent != null) parent.mkdirs();
-        try (OutputStream out = new FileOutputStream(path)) {
-            BINARY.write(data, out);
+        File tmp = new File(path + ".tmp");
+        try {
+            try (FileOutputStream out = new FileOutputStream(tmp)) {
+                BINARY.write(data, out);
+                out.getFD().sync(); // force bytes to disk before the swap, so the rename can't expose a partial file
+            }
+            try {
+                Files.move(tmp.toPath(), target.toPath(),
+                        StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException notAtomic) {
+                // Rare filesystem without atomic rename: a plain replace is still far safer than writing in place.
+                Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
         } catch (IOException e) {
             Log.error("SaveManager", "could not write save to " + path, e);
+            tmp.delete(); // drop the half-written temp; the previous save (if any) is untouched
         }
     }
 
