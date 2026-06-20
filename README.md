@@ -60,6 +60,17 @@ Five tools, each held like an inventory item and selected from the hotbar:
 | Shovel | Clear the leftover "lump" a harvested root crop leaves behind |
 | Axe | Remove a standing trellis/continuous crop (one that leaves no lump) |
 
+### Crops & seeds
+
+Seeds and produce are **distinct items**. You plant a **seed** (consumed); when the crop
+matures, harvesting it (`E`) yields **produce** — a sellable good you can't replant. A new
+farm starts with a starter seed packet (Potato, Carrot, Cauliflower, Pumpkin). Seeds have
+no art yet, so each is shown as a generated paper packet with its crop on the label.
+
+> Harvest is **produce-only** and there's no shop yet, so seeds are finite. As a stopgap,
+> a seedless player is re-granted the starter packet on load — this becomes fresh-worlds-only
+> once a shop (the real seed source) exists.
+
 ## Saves
 
 The world saves to `~/.farmlander/objects.dat` (outside the repo). It saves on **autosave**
