@@ -267,7 +267,8 @@
     "index": 44,
     "name": "Cauliflower",
     "spriteColumn": 11,
-    "spriteTopRow": 5
+    "spriteTopRow": 5,
+    "leavesLump": false
   },
   {
     "index": 45,
