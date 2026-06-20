@@ -58,11 +58,18 @@ public final class FarmInteraction {
     public int hoverCol() { return hoverCol; }
     public int hoverRow() { return hoverRow; }
 
-    /** Resolve the raw cell under the mouse. It feeds the tool/seed aim flex ({@link #targetCol}) and harvest. */
+    /** Resolve the raw cell under the live mouse pointer, then store it. Feeds the tool/seed aim flex
+     *  ({@link #targetCol}) and harvest. The pure {@link #setHoverCell} entry point behind it lets the
+     *  targeting math be exercised headlessly, without a libGDX pointer. */
     public void updateHover() {
         var mouseWorld = camera.unproject(Gdx.input.getX(), Gdx.input.getY());
-        hoverCol = soil.grid().colAtWorldX(mouseWorld.x);
-        hoverRow = soil.grid().rowAtWorldY(mouseWorld.y);
+        setHoverCell(soil.grid().colAtWorldX(mouseWorld.x), soil.grid().rowAtWorldY(mouseWorld.y));
+    }
+
+    /** Set the hovered cell directly (package-private: the test seam {@link #updateHover} drives in prod). */
+    void setHoverCell(int col, int row) {
+        hoverCol = col;
+        hoverRow = row;
     }
 
     /** Plant the selected seed (an inventory crop item) at the action target — the facing cell, or a nearby
