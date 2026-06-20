@@ -35,10 +35,10 @@ public final class InventoryHud {
     private final TextureRegion[] numberRegions;          // game_font.png row 0: 11 digit/sign glyphs, 8x8 each
     private final TextureRegion[] letterRegions;          // game_font.png A-Z (cell 41..66 in its 12-wide grid)
     private final Map<Integer, TextureRegion> iconCache = new HashMap<>();
-    // Hover tooltip text metrics (HUD = screen pixels). The glyph content is tall within its 8x8 cell (~5
-    // wide x 7 high), so the cell is drawn a touch wider than tall to keep letters from looking elongated;
-    // the advance is tighter than the draw width (the ~1px glyph padding overlaps), as the digit row does.
-    private static final float TIP_GLYPH_W = 22f, TIP_GLYPH_H = 18f, TIP_ADV = 15f, TIP_PAD = 9f;
+    // Hover tooltip text metrics (HUD = screen pixels). game_font.png is an 8x8-per-character grid, so each
+    // glyph is drawn at a square 1:1 ratio (W == H) — no stretching. The advance is tighter than the draw
+    // width (the ~1px glyph padding overlaps), the same trick the digit row uses.
+    private static final float TIP_GLYPH_W = 20f, TIP_GLYPH_H = 20f, TIP_ADV = 15f, TIP_PAD = 8f;
     private final Texture whiteTexture;                   // 1x1 white pixel for the dim-the-world quad
     private final TextureRegion whiteRegion;
 
