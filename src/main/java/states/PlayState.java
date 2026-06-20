@@ -65,10 +65,10 @@ public class PlayState extends GameState {
     // These two are internal cadence/epsilon values, not design dials, so they stay here.
     private static final float ANIM_FRAME_TIME = 16f / 144f; // tool-action animation cadence
     private static final float COLLISION_ERR = 0.45f; // passed to CollisionResolver (push past the edge)
-    // Starter seed packet, as {cropIndex, count} pairs (Potato, Carrot, Cauliflower, Pumpkin — all have field
-    // + food art). Granted when the player holds no seeds. Until a shop exists (the next slice) and with
-    // produce-only harvest, this is the whole seed supply, so it can run out — see grantStarterSeeds.
-    private static final int[][] STARTER_SEEDS = { {0, 15}, {6, 15}, {44, 10}, {29, 10} };
+    // Starter seed packet, as {cropIndex, count} pairs (Potato 0, Carrot 6, Cauliflower 44, Pumpkin 28 — all
+    // have field + food art). Granted when the player holds no seeds. Until a shop exists (the next slice) and
+    // with produce-only harvest, this is the whole seed supply, so it can run out — see grantStarterSeeds.
+    private static final int[][] STARTER_SEEDS = { {0, 15}, {6, 15}, {44, 10}, {28, 10} };
     // Crop sprite/footprint geometry on a cell lives in CropGeometry (shared by collision, planting, draw).
     private final CropGeometry cropGeometry = new CropGeometry(Config.TILE);
 

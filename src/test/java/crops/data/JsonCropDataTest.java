@@ -39,12 +39,16 @@ class JsonCropDataTest {
     }
 
     @Test
-    void berriesAndTrellisAreNonLumpAndRootCropsAreLumpsInShippedData() throws Exception {
+    void onlyRootCropsAreLumpsInTheShippedData() throws Exception {
         Map<Integer, CropBlueprint> crops = shippedCrops();
-        for (int index : new int[]{53, 54, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65}) {
-            assertFalse(crops.get(index).leavesLump, crops.get(index).name + " should be non-lump in crops.json");
+        // The 16 root crops (0..15) are the only lumps in the shipped file.
+        for (int index = 0; index <= 15; index++) {
+            assertTrue(crops.get(index).leavesLump, crops.get(index).name + " (root) must be a lump in crops.json");
         }
-        assertTrue(crops.get(0).leavesLump, "Potato is a root crop (lump)");
-        assertTrue(crops.get(6).leavesLump, "Carrot is a root crop (lump)");
+        // Above-ground crops are non-lump in the shipped file — the leafy ones the player hits, plus
+        // berries/trellis: scallion, peppers, squash, lettuces, kale, cabbage, broccoli, tomato, beans, kiwi.
+        for (int index : new int[]{16, 17, 28, 35, 37, 39, 45, 53, 61, 65, 68}) {
+            assertFalse(crops.get(index).leavesLump, crops.get(index).name + " must be non-lump in crops.json");
+        }
     }
 }

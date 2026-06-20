@@ -23,7 +23,10 @@ public final class CropBlueprint {
     public int spriteColumn;
     public int spriteTopRow;
     public long[] stageDurations; // optional; null -> default for all stages
-    public boolean leavesLump = true; // true = root crop (shovel clears its lump); false = continuous/trellis (axe removes it)
+    // true = root/tuber/bulb crop (shovel clears its lump); false = above-ground plant (axe removes it).
+    // Defaults to false because most crops grow above ground — only the root crops set this true (in
+    // crops.json and DefaultCropDataSource). A JSON entry that omits the key is therefore non-lump.
+    public boolean leavesLump = false;
 
     /** Required no-arg constructor for reflective deserialization (libGDX Json). */
     public CropBlueprint() {
