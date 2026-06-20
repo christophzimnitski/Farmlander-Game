@@ -5,9 +5,9 @@ package items.data;
  * became data-driven. Serves two roles — the fallback when {@code data/items.json} is missing/unparseable,
  * and the source of truth the JSON file was generated from (keep the two in sync).
  *
- * <p>Only tools are listed here. Crop seed/produce items (ids {@code 100+cropIndex}) are derived from
- * the crop catalog by {@code items.ItemRegistry}, so their names aren't duplicated out of
- * {@code crops.json}. Each tool is a selectable inventory item with a placeholder icon in
+ * <p>Only tools are listed here. Crop items — produce (ids {@code 100+cropIndex}) and seeds (ids
+ * {@code 200+cropIndex}) — are derived from the crop catalog by {@code items.ItemRegistry}, so their
+ * names aren't duplicated out of {@code crops.json}. Each tool is a selectable inventory item with a placeholder icon in
  * {@code resources/tools/}; it's chosen via the hotbar, and its {@code toolIndex} activates the tool's
  * animation set.
  */

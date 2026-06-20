@@ -10,9 +10,9 @@ package items;
 public final class ItemType {
     public final int id;
     public final String name;
-    public final String category;  // "tool" | "crop"
-    public final String iconPath;  // HUD sprite path under resources/, or null for none
-    public final int cropIndex;    // crop items: the CropType index they plant; -1 otherwise
+    public final String category;  // "tool" | "seed" | "produce"
+    public final String iconPath;  // HUD sprite path under resources/, or null for none / a generated icon
+    public final int cropIndex;    // seeds: the CropType index they plant; -1 otherwise (produce/tools)
     public final int toolIndex;    // tools: the player-animation set they activate (chop/mine/...); -1 otherwise
 
     public ItemType(int id, String name, String category, String iconPath, int cropIndex, int toolIndex) {
@@ -24,7 +24,8 @@ public final class ItemType {
         this.toolIndex = toolIndex;
     }
 
-    public boolean isCrop() {
+    /** A plantable seed — the only item kind that carries a crop index (produce no longer plants). */
+    public boolean isSeed() {
         return cropIndex >= 0;
     }
 

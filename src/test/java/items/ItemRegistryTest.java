@@ -11,9 +11,11 @@ import org.junit.jupiter.api.Test;
 /**
  * {@link ItemRegistry} merges explicit item blueprints (the tools) with crop items derived from the crop
  * catalog — all pure data, no GL (a {@code CropType} only needs the <em>length</em> of its stage array, so
- * a null-filled array stands in). These pin the derivation that's easy to get subtly wrong: the
- * {@code 100+index} id offset, the {@code food/<id>.png} icon convention, the crop-index reverse lookup
- * used when planting, and explicit blueprints winning over derived crop items on id collision.
+ * a null-filled array stands in). These pin the derivation that's easy to get subtly wrong: each crop yields
+ * a <em>produce</em> item ({@code 100+index}, the sellable harvest with the {@code food/<id>.png} icon, not
+ * plantable) and a <em>seed</em> item ({@code 200+index}, what you sow — it carries the crop index and has
+ * no file icon), the crop-index reverse lookup used when planting, and explicit blueprints winning on id
+ * collision.
  */
 class ItemRegistryTest {
 
@@ -23,14 +25,34 @@ class ItemRegistryTest {
     }
 
     @Test
-    void derivesCropItemsWithIdOffsetAndIconConvention() {
+    void derivesProduceItemsWithIdOffsetAndIconConvention() {
         ItemRegistry reg = new ItemRegistry(null, new CropType[]{crop(0, "Potato"), crop(6, "Carrot")});
-        ItemType potato = reg.get(100); // 100 + index 0
+        ItemType potato = reg.get(100); // produce = 100 + index 0
         assertEquals("Potato", potato.name);
-        assertEquals("crop", potato.category);
+        assertEquals("produce", potato.category);
         assertEquals("food/100.png", potato.iconPath);
-        assertEquals(0, potato.cropIndex);
+        assertEquals(-1, potato.cropIndex, "produce is a sellable good, not plantable");
         assertEquals("food/106.png", reg.get(106).iconPath); // 100 + index 6
+    }
+
+    @Test
+    void derivesSeedItemsDistinctFromProduce() {
+        ItemRegistry reg = new ItemRegistry(null, new CropType[]{crop(0, "Potato"), crop(6, "Carrot")});
+        ItemType seed = reg.get(200); // seed = 200 + index 0
+        assertEquals("Potato Seeds", seed.name);
+        assertEquals("seed", seed.category);
+        assertNull(seed.iconPath, "seed icon is generated (packet + crop), not a file");
+        assertEquals(0, seed.cropIndex, "the seed is what plants the crop");
+        assertEquals(6, reg.get(206).cropIndex); // 200 + index 6
+        assertEquals(4, reg.count()); // 2 produce + 2 seeds
+    }
+
+    @Test
+    void seedOverlayPathPointsAtTheProduceIcon() {
+        ItemRegistry reg = new ItemRegistry(null, new CropType[]{crop(6, "Carrot")});
+        assertEquals("food/106.png", reg.seedOverlayPath(206)); // the mini crop drawn on the packet
+        assertNull(reg.seedOverlayPath(106)); // produce isn't a seed
+        assertNull(reg.seedOverlayPath(999)); // unknown id
     }
 
     @Test
@@ -39,12 +61,12 @@ class ItemRegistryTest {
         ItemRegistry reg = new ItemRegistry(new ItemBlueprint[]{hoe, null}, new CropType[]{null, crop(0, "Potato")});
         assertEquals("Hoe", reg.get(1).name);
         assertNull(reg.iconPath(1)); // tool with no icon
-        assertEquals(2, reg.count()); // the Hoe + the one non-null crop; nulls skipped
+        assertEquals(3, reg.count()); // the Hoe + the one non-null crop's produce & seed; nulls skipped
     }
 
     @Test
     void explicitBlueprintWinsOnIdCollision() {
-        // An explicit blueprint at id 100 should not be overwritten by the derived Potato (also id 100).
+        // An explicit blueprint at id 100 should not be overwritten by the derived Potato produce (also id 100).
         ItemBlueprint override = new ItemBlueprint(100, "Override", "tool", "icons/x.png", -1);
         ItemRegistry reg = new ItemRegistry(new ItemBlueprint[]{override}, new CropType[]{crop(0, "Potato")});
         assertEquals("Override", reg.get(100).name);
@@ -52,12 +74,13 @@ class ItemRegistryTest {
     }
 
     @Test
-    void cropIndexForReverseLooksUpSeeds() {
+    void cropIndexForResolvesSeedsButNotProduce() {
         ItemRegistry reg = new ItemRegistry(
                 new ItemBlueprint[]{new ItemBlueprint(1, "Hoe", "tool", null, -1)},
                 new CropType[]{crop(0, "Potato")});
-        assertEquals(0, reg.cropIndexFor(100)); // crop item -> its CropType index
-        assertEquals(-1, reg.cropIndexFor(1));  // a tool plants nothing
+        assertEquals(0, reg.cropIndexFor(200));  // seed -> its CropType index (this is what plants)
+        assertEquals(-1, reg.cropIndexFor(100)); // produce no longer plants
+        assertEquals(-1, reg.cropIndexFor(1));   // a tool plants nothing
         assertEquals(-1, reg.cropIndexFor(999)); // unknown id
     }
 

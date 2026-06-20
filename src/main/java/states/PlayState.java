@@ -65,6 +65,10 @@ public class PlayState extends GameState {
     // These two are internal cadence/epsilon values, not design dials, so they stay here.
     private static final float ANIM_FRAME_TIME = 16f / 144f; // tool-action animation cadence
     private static final float COLLISION_ERR = 0.45f; // passed to CollisionResolver (push past the edge)
+    // Starter seed packet, as {cropIndex, count} pairs (Potato, Carrot, Cauliflower, Pumpkin — all have field
+    // + food art). Granted when the player holds no seeds. Until a shop exists (the next slice) and with
+    // produce-only harvest, this is the whole seed supply, so it can run out — see grantStarterSeeds.
+    private static final int[][] STARTER_SEEDS = { {0, 15}, {6, 15}, {44, 10}, {29, 10} };
     // Crop sprite/footprint geometry on a cell lives in CropGeometry (shared by collision, planting, draw).
     private final CropGeometry cropGeometry = new CropGeometry(Config.TILE);
 
@@ -208,7 +212,8 @@ public class PlayState extends GameState {
         // rather than as a silently-blank slot when the item is first shown (InventoryHud caches the miss).
         AssetManifest.missing(itemRegistry.iconPaths(), p -> Gdx.files.classpath(p).exists())
                 .forEach((id, path) -> Log.warn("Assets", "item " + id + " icon missing: " + path));
-        grantMissingTools(); // ensure the player holds the tools as items (fresh worlds + pre-tool saves)
+        grantMissingTools();  // ensure the player holds the tools as items (fresh worlds + pre-tool saves)
+        grantStarterSeeds();  // give a starter seed packet so a fresh farm (or a pre-seed-economy save) is plantable
         inventoryHud = new InventoryHud(inventoryBarTexture, toggleTexture, fontTexture, itemRegistry, assets);
         inventoryInteraction = new InventoryInteraction(inventoryItems, inventoryAmounts, inventoryHud, input);
         cropField = new CropField(collisionLayer.cols(), collisionLayer.rows());
@@ -257,6 +262,28 @@ public class PlayState extends GameState {
                 if (inventoryItems[i] == Inventory.EMPTY) { // empty slot
                     inventoryItems[i] = toolId;
                     inventoryAmounts[i] = 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    /** Give the player the {@link #STARTER_SEEDS} packet, but only if they hold no seeds at all — so a fresh
+     *  farm (or a save from before the seed economy, whose old crop items are now <em>produce</em> and can't be
+     *  replanted) has something to plant. Seeds fill the first empty slots, after tools.
+     *
+     *  <p>Stopgap: with produce-only harvest and no shop yet, seeds have no other source, so this refills a
+     *  seedless player on load to avoid stranding them. Once the shop slice lands (the real seed source), this
+     *  should be restricted to fresh worlds (no reload-refill). */
+    private void grantStarterSeeds() {
+        for (int id : inventoryItems) if (itemRegistry.cropIndexFor(id) >= 0) return; // already holds a seed
+        for (int[] pack : STARTER_SEEDS) {
+            CropType crop = cropRegistry.get(pack[0]);
+            if (crop == null) continue;
+            for (int i = 0; i < inventoryItems.length; i++) {
+                if (inventoryItems[i] == Inventory.EMPTY) {
+                    inventoryItems[i] = crop.seedItemId;
+                    inventoryAmounts[i] = pack[1];
                     break;
                 }
             }
@@ -456,8 +483,8 @@ public class PlayState extends GameState {
         // frames it only when it's plantable; an empty hand shows no frame.
         int dir = player.facing();
         int highlightCol = -1, highlightRow = -1;
-        boolean cropInHand = itemRegistry.cropIndexFor(inventoryItems[selectedSlot]) >= 0;
-        if (player.toolIndex() >= 1 || (cropInHand && farmInteraction.targetPlantable(dir))) {
+        boolean seedInHand = itemRegistry.cropIndexFor(inventoryItems[selectedSlot]) >= 0;
+        if (player.toolIndex() >= 1 || (seedInHand && farmInteraction.targetPlantable(dir))) {
             highlightCol = farmInteraction.targetCol(dir);
             highlightRow = farmInteraction.targetRow(dir);
         }

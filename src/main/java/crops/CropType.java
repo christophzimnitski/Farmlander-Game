@@ -10,15 +10,26 @@ import java.util.Arrays;
  * <p>{@code stageDurations[i]} is the milliseconds needed to grow from stage {@code i} to
  * {@code i+1}, so the array length is {@code stageCount - 1}. The durations are mutable so growth
  * speed can be tuned per crop (or per stage) later; the registry currently seeds them all to one
- * shared default. The inventory item id of a crop's seed/produce is {@code 100 + index}, matching
- * the existing {@code food/<id>.png} assets.
+ * shared default.
+ *
+ * <p>A crop maps to <b>two</b> distinct inventory items, both keyed off its {@link #index}: the
+ * <b>produce</b> ({@link #itemId} = {@code 100 + index}, matching the {@code food/<id>.png} assets — a
+ * sellable good you can't replant) and the <b>seed</b> ({@link #seedItemId} = {@code 200 + index} — what
+ * you sow). Keeping the two id formulas here is the single source of the crop↔item mapping (the registry
+ * derives both from these fields rather than recomputing the offsets).
  */
 public final class CropType {
+    /** Produce item ids start here: {@code itemId = 100 + index} (the existing {@code food/<id>.png} space). */
+    public static final int PRODUCE_ITEM_BASE = 100;
+    /** Seed item ids start here: {@code seedItemId = 200 + index}, a band clear of the produce ids. */
+    public static final int SEED_ITEM_BASE = 200;
+
     public final int index;
     public final String name;
     public final TextureRegion[] stages;   // stage 0 (sprout) .. last (mature)
     public final long[] stageDurations;    // length = stages.length - 1
-    public final int itemId;
+    public final int itemId;               // produce item id = PRODUCE_ITEM_BASE + index
+    public final int seedItemId;           // seed item id = SEED_ITEM_BASE + index
     // Harvest category. true (default) = a root crop that leaves a "lump" (the post-harvest hole frame),
     // which the shovel clears. false = a continuous/trellis crop that leaves no lump and is removed whole
     // by the axe. Mutable like stageDurations so the catalog can be re-categorized/tuned (set by the registry).
@@ -38,7 +49,8 @@ public final class CropType {
         this.index = index;
         this.name = name;
         this.stages = stages;
-        this.itemId = 100 + index;
+        this.itemId = PRODUCE_ITEM_BASE + index;
+        this.seedItemId = SEED_ITEM_BASE + index;
         int need = Math.max(0, stages.length - 1);
         this.stageDurations = new long[need];
         long fallback = (stageDurations != null && stageDurations.length > 0) ? stageDurations[0] : 0L;
