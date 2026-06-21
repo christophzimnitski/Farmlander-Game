@@ -34,6 +34,16 @@ public final class GameCamera {
         hud.setToOrtho(true, width, height);
     }
 
+    /** Set the world camera's zoom (1 = 1:1 pixels; &gt;1 zooms out to see more world). Used by the editor's
+     *  free camera; the play camera leaves it at 1. {@link #worldViewBounds} and {@link #unproject} already
+     *  account for it. Re-{@link #follow} or call this to apply. */
+    public void setZoom(float zoom) {
+        world.zoom = zoom;
+        world.update();
+    }
+
+    public float zoom() { return world.zoom; }
+
     /** Projection matrix for drawing the world (set on the batch before world draws). */
     public Matrix4 worldCombined() { return world.combined; }
 

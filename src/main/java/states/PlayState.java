@@ -326,7 +326,13 @@ public class PlayState extends GameState {
 
     @Override
     public void update(float delta) {
-        if (input.isDown(InputAction.QUIT)) Gdx.app.exit();
+        if (input.isJustPressed(InputAction.QUIT)) Gdx.app.exit();
+        // F1 opens the map editor over this state (when enabled). Push and return so the rest of the play
+        // update is skipped this frame; while the editor is on top, PlayState.update won't run at all.
+        if (Config.EDITOR_ENABLED && input.isJustPressed(InputAction.TOGGLE_EDITOR)) {
+            stateManager.push(new EditorState(stateManager, worldRenderer, player.centerX(), player.centerY()));
+            return;
+        }
         autosave(delta); // periodic save so a crash/SIGKILL doesn't lose progress (exit-only save isn't enough)
         soil.update(System.currentTimeMillis(), Config.WATER_DRY_MILLIS); // expire wet soil (ticks every frame)
         farmInteraction.applyWaterGrowthBoost(delta); // watered crops grow faster (ticks every frame, before any early-out)
