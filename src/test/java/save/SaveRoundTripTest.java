@@ -123,6 +123,49 @@ class SaveRoundTripTest {
     }
 
     @Test
+    void decorationAndObjectsSurviveRoundTrip() throws IOException {
+        WorldSave in = new WorldSave();
+        in.walkActions = new int[]{32, 33, 34, 35};
+        in.collision = new int[][]{{0}};
+        in.planting = new int[][]{{0}};
+        in.grass = new int[][]{{0}};
+        in.decoration = new int[][]{{0, 65537}, {131073, 0}}; // packed palette ids
+        in.objects = new ObjectSave[]{
+                new ObjectSave("tilesets/farming_fishing.png", 160, 96, 96, 160, 2000f, 800f, 288f, 480f),
+                new ObjectSave("tilesets/farming_fishing.png", 452, 448, 196, 96, 3000.5f, 1200.25f, 588f, 288f),
+        };
+
+        WorldSave out = roundTrip(in);
+
+        assertArrayEquals(in.decoration, out.decoration);
+        assertEquals(2, out.objects.length);
+        ObjectSave o = out.objects[1];
+        assertEquals("tilesets/farming_fishing.png", o.sheetPath);
+        assertEquals(452, o.srcX);
+        assertEquals(448, o.srcY);
+        assertEquals(196, o.srcW);
+        assertEquals(96, o.srcH);
+        assertEquals(3000.5f, o.worldX);
+        assertEquals(1200.25f, o.worldY);
+        assertEquals(588f, o.drawW);
+        assertEquals(288f, o.drawH);
+    }
+
+    @Test
+    void nullDecorationAndObjectsReadBack() throws IOException {
+        WorldSave in = new WorldSave();
+        in.walkActions = new int[]{32, 33, 34, 35};
+        in.collision = new int[][]{{0}};
+        in.planting = new int[][]{{0}};
+        in.grass = new int[][]{{0}};
+        // decoration + objects left null
+
+        WorldSave out = roundTrip(in);
+        assertNull(out.decoration, "a null decoration grid stays null");
+        assertEquals(0, out.objects.length, "null objects normalize to an empty array");
+    }
+
+    @Test
     void badMagicIsRejected() {
         BinarySaveFormat format = new BinarySaveFormat();
         byte[] garbage = {0, 0, 0, 0, 0, 0, 0, 1};

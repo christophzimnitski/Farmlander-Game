@@ -37,6 +37,11 @@ public final class WorldSave {
     // Crops.
     public CropSave[] crops;
 
+    // Editor-authored content (save v3+): the decoration tile layer (global palette ids, [col][row]) and the
+    // free-placed props. Both may be null on an older save / a partially-built instance.
+    public int[][] decoration;
+    public ObjectSave[] objects;
+
     public WorldSave() {
     }
 }

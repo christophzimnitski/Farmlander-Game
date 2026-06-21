@@ -9,6 +9,8 @@ import entities.PlayerCharacter;
 import org.junit.jupiter.api.Test;
 import world.ChunkedTileLayer;
 import world.DualGridSoil;
+import world.ObjectLayer;
+import world.PlacedObject;
 
 /**
  * Pins the property that makes the background autosave safe: {@link WorldPersistence#snapshot} returns a
@@ -23,12 +25,16 @@ class WorldPersistenceTest {
         float tile = 96f;
         ChunkedTileLayer collision = new ChunkedTileLayer(cols, rows, tile);
         ChunkedTileLayer grass = new ChunkedTileLayer(cols, rows, tile);
+        ChunkedTileLayer decoration = new ChunkedTileLayer(cols, rows, tile);
         DualGridSoil soil = new DualGridSoil(new ChunkedTileLayer(cols, rows, tile));
         CropField field = new CropField(cols, rows);
+        ObjectLayer objects = new ObjectLayer();
+        objects.add(new PlacedObject("tilesets/farming_fishing.png", 160, 96, 96, 160, 200f, 100f, 288f, 480f));
         PlayerCharacter player =
                 new PlayerCharacter(100f, 100f, 34, new int[]{32, 33, 34, 35}, new TextureRegion[36][9]);
         // cropRegistry is only used by restoreCrops, not by snapshot, so null is fine here.
-        return new WorldPersistence(collision, grass, soil, field, player, items, amounts, null, 42L);
+        return new WorldPersistence(collision, grass, decoration, soil, field, objects, player,
+                items, amounts, null, 42L);
     }
 
     @Test
@@ -48,7 +54,10 @@ class WorldPersistenceTest {
         assertEquals(3, snap.invToggle, "the selected slot is captured at snapshot time");
         assertEquals(42L, snap.worldSeed);
         assertNotNull(snap.collision, "grids are materialised into the snapshot");
+        assertNotNull(snap.decoration, "the decoration grid is materialised into the snapshot");
         assertNotNull(snap.walkActions);
+        assertEquals(1, snap.objects.length, "placed props are captured into the snapshot");
+        assertEquals(160, snap.objects[0].srcX);
     }
 
     @Test

@@ -47,6 +47,7 @@ import tools.data.ToolActionBlueprint;
 import world.ChunkedTileLayer;
 import world.DualGridSoil;
 import world.ObjectLayer;
+import world.PlacedObject;
 
 import static entities.PlayerAnimations.playerAnimationArrays;
 
@@ -95,7 +96,7 @@ public class PlayState extends GameState {
     // decoration tile layer (any sheet, via the palette) and free-placed props. Shared with EditorState.
     private final TilePalette palette = new TilePalette(assets);
     private final ChunkedTileLayer decorationLayer;
-    private final ObjectLayer objectLayer = new ObjectLayer();
+    private final ObjectLayer objectLayer;
     private final CollisionResolver collisionResolver;
     private final PlayerCharacter player; // position, facing, tool, walk animation; also the collision Body
     private final int[] inventoryItems, inventoryAmounts; // live refs into the Inventory built at load
@@ -190,7 +191,11 @@ public class PlayState extends GameState {
         grassLayer = loaded.grass();
         soil = loaded.soil();
         worldSeed = loaded.worldSeed();
-        decorationLayer = new ChunkedTileLayer(collisionLayer.cols(), collisionLayer.rows(), Config.TILE);
+        decorationLayer = loaded.decoration();
+        objectLayer = loaded.objects();
+        // Props load with null regions (the save layer is GL-free); rebuild each from its sheet now.
+        for (PlacedObject o : objectLayer.all())
+            o.setRegion(TextureSlicer.subRegion(assets.get(o.sheetPath), o.srcX, o.srcY, o.srcW, o.srcH));
         inventoryItems = loaded.inventoryItems();     // shared refs: mutating these mutates the loaded inventory
         inventoryAmounts = loaded.inventoryAmounts();
         selectedSlot = loaded.selectedSlot();
@@ -226,8 +231,8 @@ public class PlayState extends GameState {
         inventoryInteraction = new InventoryInteraction(inventoryItems, inventoryAmounts, inventoryHud, input);
         cropField = new CropField(collisionLayer.cols(), collisionLayer.rows());
         collisionResolver = new CollisionResolver(collisionLayer, cropField, cropGeometry, Config.TILE, COLLISION_ERR);
-        worldPersistence = new WorldPersistence(collisionLayer, grassLayer, soil, cropField, player,
-                inventoryItems, inventoryAmounts, cropRegistry, worldSeed);
+        worldPersistence = new WorldPersistence(collisionLayer, grassLayer, decorationLayer, soil, cropField,
+                objectLayer, player, inventoryItems, inventoryAmounts, cropRegistry, worldSeed);
         worldPersistence.restoreCrops(loaded.crops());
         worldRenderer = new WorldRenderer(grassLayer, soil, collisionLayer, cropField, cropGeometry, Config.TILE,
                 grassRegions, soilRegions, collisionRegions, wateredRegions, frameRegion,

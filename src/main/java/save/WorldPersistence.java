@@ -8,6 +8,8 @@ import crops.PlantedCrop;
 import entities.PlayerCharacter;
 import world.ChunkedTileLayer;
 import world.DualGridSoil;
+import world.ObjectLayer;
+import world.PlacedObject;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,9 +29,10 @@ import java.util.concurrent.TimeUnit;
  * saved crops back into the field on load.
  */
 public final class WorldPersistence {
-    private final ChunkedTileLayer collision, grass;
+    private final ChunkedTileLayer collision, grass, decoration;
     private final DualGridSoil soil;
     private final CropField cropField;
+    private final ObjectLayer objects;
     private final PlayerCharacter player;
     private final int[] inventoryItems, inventoryAmounts; // shared live refs — mutated in place during play
     private final CropRegistry cropRegistry;
@@ -43,13 +46,16 @@ public final class WorldPersistence {
         return t;
     });
 
-    public WorldPersistence(ChunkedTileLayer collision, ChunkedTileLayer grass, DualGridSoil soil, CropField cropField,
+    public WorldPersistence(ChunkedTileLayer collision, ChunkedTileLayer grass, ChunkedTileLayer decoration,
+                            DualGridSoil soil, CropField cropField, ObjectLayer objects,
                             PlayerCharacter player, int[] inventoryItems, int[] inventoryAmounts,
                             CropRegistry cropRegistry, long worldSeed) {
         this.collision = collision;
         this.grass = grass;
+        this.decoration = decoration;
         this.soil = soil;
         this.cropField = cropField;
+        this.objects = objects;
         this.player = player;
         this.inventoryItems = inventoryItems;
         this.inventoryAmounts = inventoryAmounts;
@@ -87,7 +93,18 @@ public final class WorldPersistence {
         ws.collision = collision.toDense();         // toDense already materialises a fresh array
         ws.planting = soil.grid().toDense();        // tilled flags (0/1); watering is a separate, unsaved layer
         ws.grass = grass.toDense();
+        ws.decoration = decoration.toDense();        // editor-placed tiles
         ws.worldSeed = worldSeed;
+
+        // Editor-placed props -> plain ObjectSave records (the TextureRegion is rebuilt from the sheet on load).
+        List<PlacedObject> objs = objects.all();
+        ObjectSave[] objectSaves = new ObjectSave[objs.size()];
+        for (int i = 0; i < objs.size(); i++) {
+            PlacedObject o = objs.get(i);
+            objectSaves[i] = new ObjectSave(o.sheetPath, o.srcX, o.srcY, o.srcW, o.srcH,
+                    o.worldX, o.worldY, o.drawW, o.drawH);
+        }
+        ws.objects = objectSaves;
 
         // Snapshot the crop grid as plain CropSave records (no PlantedCrop/CropType, which hold textures).
         List<CropSave> crops = new ArrayList<>();

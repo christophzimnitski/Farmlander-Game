@@ -5,10 +5,6 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.List;
-
-import world.ChunkedTileLayer;
 
 /**
  * The owned, primary save encoding: a compact hand-rolled binary stream — no library, no Java
@@ -20,16 +16,17 @@ import world.ChunkedTileLayer;
  * extra field when {@code fileVersion >=} the version that introduced it, so old files still load and
  * adding a field never shifts everything else.
  *
- * <p><b>Version 2</b> writes the tile grids <em>per-chunk</em>: each grid is split into
- * {@value world.ChunkedTileLayer#CHUNK_SIZE}-cell blocks and only the non-empty ones are stored (with
- * their chunk coords), so a mostly-empty layer (collision, tilled soil) costs almost nothing on disk. It
- * also appends a {@code worldSeed}. A version-1 file (dense grids, no seed) still reads — the grid
- * decoder branches on the file version, so old saves migrate to v2 on the next save.
+ * <p><b>Version 2</b> writes the tile grids <em>per-chunk</em> (see {@link GridCodec}): each grid is split
+ * into {@value world.ChunkedTileLayer#CHUNK_SIZE}-cell blocks and only the non-empty ones are stored, so a
+ * mostly-empty layer (collision, tilled soil) costs almost nothing on disk. It also appends a
+ * {@code worldSeed}. <b>Version 3</b> appends the editor's decoration tile layer and the placed-object list.
+ * Older files still read — each appended field is consumed only when {@code fileVersion} is high enough — so
+ * a v1/v2 save migrates forward on the next save.
  */
 public final class BinarySaveFormat implements SaveFormat {
     /** 'F','L','N','D' — distinguishes our stream from a Java-serialization stream (which starts 0xACED). */
     public static final int MAGIC = 0x464C4E44;
-    public static final int VERSION = 2;
+    public static final int VERSION = 3;
 
     @Override
     public void write(WorldSave d, OutputStream rawOut) throws IOException {
@@ -46,9 +43,9 @@ public final class BinarySaveFormat implements SaveFormat {
         writeIntArray(out, d.invAmounts);
         out.writeInt(d.invToggle);
 
-        writeGridChunked(out, d.collision);
-        writeGridChunked(out, d.planting);
-        writeGridChunked(out, d.grass);
+        GridCodec.writeChunked(out, d.collision);
+        GridCodec.writeChunked(out, d.planting);
+        GridCodec.writeChunked(out, d.grass);
 
         CropSave[] crops = d.crops == null ? new CropSave[0] : d.crops;
         out.writeInt(crops.length);
@@ -60,6 +57,22 @@ public final class BinarySaveFormat implements SaveFormat {
             out.writeBoolean(c.harvested);
         }
         out.writeLong(d.worldSeed); // appended in v2
+
+        // v3: editor-authored content — the decoration tile layer and the placed-object list.
+        GridCodec.writeChunked(out, d.decoration);
+        ObjectSave[] objects = d.objects == null ? new ObjectSave[0] : d.objects;
+        out.writeInt(objects.length);
+        for (ObjectSave o : objects) {
+            out.writeUTF(o.sheetPath);
+            out.writeInt(o.srcX);
+            out.writeInt(o.srcY);
+            out.writeInt(o.srcW);
+            out.writeInt(o.srcH);
+            out.writeFloat(o.worldX);
+            out.writeFloat(o.worldY);
+            out.writeFloat(o.drawW);
+            out.writeFloat(o.drawH);
+        }
         out.flush();
     }
 
@@ -83,9 +96,9 @@ public final class BinarySaveFormat implements SaveFormat {
 
         // v2 stores grids per-chunk; v1 stored them dense. Branch on the file's version.
         if (version >= 2) {
-            d.collision = readGridChunked(in);
-            d.planting = readGridChunked(in);
-            d.grass = readGridChunked(in);
+            d.collision = GridCodec.readChunked(in);
+            d.planting = GridCodec.readChunked(in);
+            d.grass = GridCodec.readChunked(in);
         } else {
             d.collision = readGridDense(in);
             d.planting = readGridDense(in);
@@ -100,6 +113,17 @@ public final class BinarySaveFormat implements SaveFormat {
         }
         d.crops = crops;
         if (version >= 2) d.worldSeed = in.readLong(); // appended in v2; v1 worlds default to 0
+
+        if (version >= 3) { // editor decoration + objects
+            d.decoration = GridCodec.readChunked(in);
+            int objectCount = in.readInt();
+            ObjectSave[] objects = new ObjectSave[objectCount];
+            for (int i = 0; i < objectCount; i++) {
+                objects[i] = new ObjectSave(in.readUTF(), in.readInt(), in.readInt(), in.readInt(), in.readInt(),
+                        in.readFloat(), in.readFloat(), in.readFloat(), in.readFloat());
+            }
+            d.objects = objects;
+        }
         return d;
     }
 
@@ -130,67 +154,4 @@ public final class BinarySaveFormat implements SaveFormat {
         return g;
     }
 
-    // --- v2 (per-chunk) grid encoding ---
-
-    /**
-     * Write a grid as: {@code cols}, {@code rows}, {@code chunkSize}, then the count of non-empty chunks
-     * and, for each, its {@code (chunkCol, chunkRow)} and {@code chunkSize²} ints (row-major within the
-     * chunk, zero-padded past the grid edge). All-zero chunks are skipped, so a sparse layer is tiny.
-     * A {@code null} grid writes {@code cols == -1}.
-     */
-    private static void writeGridChunked(DataOutputStream out, int[][] g) throws IOException {
-        if (g == null) { out.writeInt(-1); return; }
-        int cols = g.length;
-        int rows = cols == 0 ? 0 : g[0].length;
-        int cs = ChunkedTileLayer.CHUNK_SIZE;
-        out.writeInt(cols);
-        out.writeInt(rows);
-        out.writeInt(cs);
-
-        int chunkCols = (cols + cs - 1) / cs;
-        int chunkRows = (rows + cs - 1) / cs;
-        List<int[]> nonEmpty = new ArrayList<>();
-        for (int cc = 0; cc < chunkCols; cc++)
-            for (int cr = 0; cr < chunkRows; cr++)
-                if (!chunkIsEmpty(g, cc, cr, cs, cols, rows)) nonEmpty.add(new int[]{cc, cr});
-
-        out.writeInt(nonEmpty.size());
-        for (int[] chunk : nonEmpty) {
-            int cc = chunk[0], cr = chunk[1];
-            out.writeInt(cc);
-            out.writeInt(cr);
-            for (int local = 0; local < cs * cs; local++) {
-                int col = cc * cs + (local % cs);
-                int row = cr * cs + (local / cs);
-                out.writeInt((col < cols && row < rows) ? g[col][row] : 0);
-            }
-        }
-    }
-
-    private static int[][] readGridChunked(DataInputStream in) throws IOException {
-        int cols = in.readInt();
-        if (cols < 0) return null;
-        int rows = in.readInt();
-        int cs = in.readInt();
-        int[][] g = new int[cols][rows];
-        int count = in.readInt();
-        for (int n = 0; n < count; n++) {
-            int cc = in.readInt();
-            int cr = in.readInt();
-            for (int local = 0; local < cs * cs; local++) {
-                int v = in.readInt();
-                int col = cc * cs + (local % cs);
-                int row = cr * cs + (local / cs);
-                if (col < cols && row < rows) g[col][row] = v;
-            }
-        }
-        return g;
-    }
-
-    private static boolean chunkIsEmpty(int[][] g, int cc, int cr, int cs, int cols, int rows) {
-        for (int col = cc * cs; col < Math.min((cc + 1) * cs, cols); col++)
-            for (int row = cr * cs; row < Math.min((cr + 1) * cs, rows); row++)
-                if (g[col][row] != 0) return false;
-        return true;
-    }
 }

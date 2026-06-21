@@ -4,6 +4,8 @@ import entities.Inventory;
 import world.ChunkedTileLayer;
 import world.DualGridSoil;
 import world.GrassGenerator;
+import world.ObjectLayer;
+import world.PlacedObject;
 
 /**
  * The load counterpart to {@link WorldPersistence}: decodes a loaded {@link WorldSave} (or {@code null} for
@@ -40,6 +42,8 @@ public final class FarmWorldLoader {
                 ? placeIntoWorld(ws.grass, false)
                 : GrassGenerator.randomGrass(cols, rows, tile, seed); // deterministic fresh grass
         DualGridSoil soil = new DualGridSoil(placeIntoWorld(ws == null ? null : ws.planting, true));
+        ChunkedTileLayer decoration = placeIntoWorld(ws == null ? null : ws.decoration, false);
+        ObjectLayer objects = buildObjects(ws == null ? null : ws.objects);
 
         // Rebuild the live Inventory from saved primitives (no longer serialized directly). Fixed at
         // Inventory.SIZE (hotbar + bag); a shorter old save copies into the low slots, the tail stays empty.
@@ -57,11 +61,23 @@ public final class FarmWorldLoader {
         int selectedSlot = inv.getSelectedSlot();
 
         if (ws != null) {
-            return new LoadedWorld(collision, grass, soil, seed, items, amounts, selectedSlot,
+            return new LoadedWorld(collision, grass, decoration, soil, objects, seed, items, amounts, selectedSlot,
                     ws.playerX, ws.playerY, ws.currentAnimation, ws.walkActions, ws.crops);
         }
-        return new LoadedWorld(collision, grass, soil, seed, items, amounts, selectedSlot,
+        return new LoadedWorld(collision, grass, decoration, soil, objects, seed, items, amounts, selectedSlot,
                 DEFAULT_SPAWN_X, DEFAULT_SPAWN_Y, DEFAULT_ANIMATION, new int[]{32, 33, 34, 35}, null);
+    }
+
+    /** Rebuild the object layer from saved records. The drawable {@code TextureRegion} is GL state, so it's
+     *  left null here and filled in by the caller (which has the asset cache) — keeping this loader GL-free. */
+    private ObjectLayer buildObjects(ObjectSave[] saved) {
+        ObjectLayer layer = new ObjectLayer();
+        if (saved == null) return layer;
+        for (ObjectSave o : saved) {
+            layer.add(new PlacedObject(o.sheetPath, o.srcX, o.srcY, o.srcW, o.srcH,
+                    o.worldX, o.worldY, o.drawW, o.drawH));
+        }
+        return layer;
     }
 
     /** Build a world-sized layer and copy a saved grid into it (top-left aligned). A {@code null} source
@@ -89,7 +105,9 @@ public final class FarmWorldLoader {
     public record LoadedWorld(
             ChunkedTileLayer collision,
             ChunkedTileLayer grass,
+            ChunkedTileLayer decoration,
             DualGridSoil soil,
+            ObjectLayer objects,
             long worldSeed,
             int[] inventoryItems,
             int[] inventoryAmounts,
