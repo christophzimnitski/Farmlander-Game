@@ -20,6 +20,7 @@ import render.GameCamera;
 import render.TextureSlicer;
 import render.WorldRenderer;
 import ui.PixelFont;
+import world.BushAutotiler;
 import world.ChunkedTileLayer;
 import world.DualGridSoil;
 import world.ObjectLayer;
@@ -41,10 +42,10 @@ public final class EditorState extends GameState {
     private static final float ZOOM_RATE = 1.8f;   // multiplicative zoom per second while held
     private static final float MIN_ZOOM = 0.5f, MAX_ZOOM = 8f;
 
-    /** What a left-click/drag on the map does. SOIL paints the dual-grid tilled flag (auto-orienting);
-     *  TILE stamps the picked decoration tile; PROP drops a free-placed object (one per click, not dragged);
-     *  NONE until a brush is chosen. */
-    private enum BrushMode { NONE, TILE, SOIL, PROP }
+    /** What a left-click/drag on the map does. SOIL paints the dual-grid tilled flag (auto-orienting); BUSH
+     *  paints an auto-orienting 9-slice clump into the collision layer; TILE stamps the picked decoration
+     *  tile; PROP drops a free-placed object (one per click, not dragged); NONE until a brush is chosen. */
+    private enum BrushMode { NONE, TILE, SOIL, BUSH, PROP }
 
     private final WorldRenderer worldRenderer;     // shared: draws PlayState's live world layers
     private final GameCamera camera;               // the editor's own free camera
@@ -67,8 +68,10 @@ public final class EditorState extends GameState {
 
     private final float tile;                          // world units per cell (== Config.TILE)
     private final float propScale;                     // world units per source pixel (tile / 32) for props
+    private final BushAutotiler bushAutotiler;         // 9-slice bush painting into the collision layer
     private BrushMode mode = BrushMode.NONE;
-    private int brushTileId = TilePalette.EMPTY;     // the tile the picker last selected (TILE mode)
+    private int bushBase;                              // selected bush type's collision band (0/18/36)
+    private int brushTileId = TilePalette.EMPTY;     // the tile the picker last selected (TILE/BUSH preview)
     private PropCatalog.Prop brushProp;               // the prop selected (PROP mode)
     private TextureRegion brushPropRegion;            // its sliced region (swatch + ghost preview)
     private float camX, camY;                         // world-space camera centre
@@ -87,6 +90,7 @@ public final class EditorState extends GameState {
         this.objects = objects;
         this.tile = decoration.tileSize();
         this.propScale = tile / 32f; // source props are 32px tiles; scale them to world units like everything else
+        this.bushAutotiler = new BushAutotiler(collision);
         this.camX = startX;
         this.camY = startY;
         camera = new GameCamera(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
@@ -168,14 +172,23 @@ public final class EditorState extends GameState {
         camera.follow(camX, camY);
     }
 
-    /** A tileset row was clicked: the plow sheet paints soil (auto-orienting via the dual grid, no per-tile
-     *  pick); every other sheet opens the picker to choose a specific tile. */
+    /** A tileset row was clicked: the plow sheet paints soil and the bush sheets paint auto-orienting clumps
+     *  (no per-tile pick — connectivity decides the piece); every other sheet opens the picker. */
     private void selectSheet(int sheetIndex) {
-        if (TilePalette.sheet(sheetIndex).path.equals("tilesets/plowed_soil.png")) {
-            mode = BrushMode.SOIL;
-        } else {
-            picker.open(sheetIndex);
+        switch (TilePalette.sheet(sheetIndex).path) {
+            case "tilesets/plowed_soil.png" -> mode = BrushMode.SOIL;
+            case "tilesets/tallgrass.png"   -> selectBush(sheetIndex, 0);
+            case "tilesets/wheat.png"       -> selectBush(sheetIndex, BushAutotiler.SPAN);
+            case "tilesets/youngwheat.png"  -> selectBush(sheetIndex, 2 * BushAutotiler.SPAN);
+            default -> picker.open(sheetIndex);
         }
+    }
+
+    /** Switch to the bush brush for a sheet, previewing its centre tile (1-based index 11) in the swatch/ghost. */
+    private void selectBush(int sheetIndex, int base) {
+        mode = BrushMode.BUSH;
+        bushBase = base;
+        brushTileId = TilePalette.pack(sheetIndex, 10); // 0-based 10 == tile 11, the clump centre
     }
 
     /** A prop row was clicked: switch to the prop brush and slice its sprite once for the swatch/ghost. */
@@ -207,7 +220,8 @@ public final class EditorState extends GameState {
         switch (mode) {
             case TILE -> { if (TilePalette.isValid(brushTileId)) decoration.set(col, row, brushTileId); }
             case SOIL -> soil.till(col, row);
-            case NONE -> { }
+            case BUSH -> bushAutotiler.paint(col, row, bushBase);
+            case PROP, NONE -> { }
         }
     }
 
@@ -224,6 +238,7 @@ public final class EditorState extends GameState {
         if (!decoration.inBounds(col, row)) return;
         decoration.set(col, row, TilePalette.EMPTY);
         soil.clear(col, row);
+        bushAutotiler.erase(col, row); // clears a bush here + re-tiles its neighbours (no-op on non-bush cells)
     }
 
     @Override
@@ -253,7 +268,7 @@ public final class EditorState extends GameState {
             int col = decoration.colAtWorldX(wp.x), row = decoration.rowAtWorldY(wp.y);
             if (decoration.inBounds(col, row)) {
                 float wx = col * tile, wy = row * tile;
-                if (mode == BrushMode.TILE) {
+                if (mode == BrushMode.TILE || mode == BrushMode.BUSH) {
                     TextureRegion r = palette.region(brushTileId);
                     if (r != null) {
                         batch.setColor(1f, 1f, 1f, 0.5f);
@@ -279,7 +294,9 @@ public final class EditorState extends GameState {
         TextureRegion r;
         int srcW, srcH;
         String label;
-        if (mode == BrushMode.TILE) { r = palette.region(brushTileId); srcW = srcH = 32; label = "TILE"; }
+        if (mode == BrushMode.TILE || mode == BrushMode.BUSH) {
+            r = palette.region(brushTileId); srcW = srcH = 32; label = mode == BrushMode.BUSH ? "BUSH" : "TILE";
+        }
         else if (mode == BrushMode.PROP) { r = brushPropRegion; srcW = brushProp.w; srcH = brushProp.h; label = "PROP"; }
         else if (mode == BrushMode.SOIL) { r = null; srcW = srcH = 1; label = "SOIL"; }
         else return; // NONE
