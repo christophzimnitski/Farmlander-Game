@@ -57,7 +57,6 @@ public final class TilePalette {
             new Sheet("tilesets/reed.png",         "Reeds",        3, 10, false),
             new Sheet("tilesets/fence.png",        "Fence",        3, 6, false),
             new Sheet("tilesets/fence_alt.png",    "Fence (alt)",  3, 6, false),
-            new Sheet("tilesets/plants.png",       "Plants",       9, 12, false),
             new Sheet("tilesets/plowed_soil.png",  "Tilled soil",  3, 6, true),
             new Sheet("tilesets/tallgrass.png",    "Tall grass",   3, 6, true),
             new Sheet("tilesets/wheat.png",        "Wheat",        3, 6, true),
