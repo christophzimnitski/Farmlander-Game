@@ -330,7 +330,8 @@ public class PlayState extends GameState {
         // F1 opens the map editor over this state (when enabled). Push and return so the rest of the play
         // update is skipped this frame; while the editor is on top, PlayState.update won't run at all.
         if (Config.EDITOR_ENABLED && input.isJustPressed(InputAction.TOGGLE_EDITOR)) {
-            stateManager.push(new EditorState(stateManager, worldRenderer, player.centerX(), player.centerY()));
+            stateManager.push(new EditorState(stateManager, worldRenderer, assets, palette,
+                    decorationLayer, soil, collisionLayer, objectLayer, player.centerX(), player.centerY()));
             return;
         }
         autosave(delta); // periodic save so a crash/SIGKILL doesn't lose progress (exit-only save isn't enough)
