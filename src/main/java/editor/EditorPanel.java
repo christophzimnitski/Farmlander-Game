@@ -1,8 +1,6 @@
 package editor;
 
 import com.badlogic.gdx.graphics.Color;
-import com.badlogic.gdx.graphics.Pixmap;
-import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.math.Matrix4;
@@ -16,7 +14,7 @@ import ui.PixelFont;
  * <p>Hand-rolled to match the rest of the game's UI (per the project's owned-tech preference): filled quads
  * from a 1×1 white texture and the shared {@link PixelFont}, no Scene2D. Coordinates are the Y-down HUD
  * space (origin top-left), the same convention the inventory HUD uses, so screen-pixel mouse positions index
- * it directly. Owns its white pixel; {@link #dispose} frees it.
+ * it directly. The font and white pixel are owned by {@code EditorState} and shared with the picker.
  */
 public final class EditorPanel {
     private static final float PANEL_W = 250f;
@@ -31,20 +29,14 @@ public final class EditorPanel {
     public enum Hit { NONE, PANEL, TAB, SHEET }
 
     private final PixelFont font;
-    private final Texture white;
     private final TextureRegion whiteRegion;
 
     private boolean collapsed = false;
     private int selectedSheet = -1; // last-clicked tileset row (index into TilePalette), -1 = none
 
-    public EditorPanel(Texture fontTexture) {
-        this.font = new PixelFont(fontTexture);
-        Pixmap pm = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-        pm.setColor(Color.WHITE);
-        pm.fill();
-        this.white = new Texture(pm);
-        pm.dispose();
-        this.whiteRegion = new TextureRegion(white);
+    public EditorPanel(PixelFont font, TextureRegion whiteRegion) {
+        this.font = font;
+        this.whiteRegion = whiteRegion;
     }
 
     public boolean collapsed() { return collapsed; }
@@ -123,6 +115,4 @@ public final class EditorPanel {
     private static boolean within(float px, float py, float x, float y, float w, float h) {
         return px >= x && px < x + w && py >= y && py < y + h;
     }
-
-    public void dispose() { white.dispose(); }
 }

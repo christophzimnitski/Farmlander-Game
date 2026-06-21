@@ -2,16 +2,22 @@ package states;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.Pixmap;
+import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import core.Assets;
 import core.GameState;
 import core.GameStateManager;
 import editor.EditorPanel;
+import editor.SheetPicker;
 import editor.TilePalette;
 import input.InputAction;
 import input.InputBindings;
 import render.GameCamera;
 import render.WorldRenderer;
+import ui.PixelFont;
 import world.ChunkedTileLayer;
 import world.DualGridSoil;
 import world.ObjectLayer;
@@ -20,12 +26,12 @@ import world.ObjectLayer;
  * The map editor scene, pushed over {@link PlayState} by F1 (see {@code Config.EDITOR_ENABLED} +
  * {@code InputAction.TOGGLE_EDITOR}). A <b>free-camera</b> authoring view: no player, no collisions — fly
  * around with WASD/arrows, zoom with {@code -}/{@code =}, pick a tileset from the retractable side panel,
- * and (in later slices) paint tiles and drop props.
+ * choose a tile in the picker popup, and (next slice) paint it onto the map.
  *
  * <p>It edits the <em>same</em> world layers {@link PlayState} owns (handed in here), through its own free
  * {@link GameCamera}, so edits show up immediately back in play. While the editor is on top of the state
- * stack, {@code PlayState.update} doesn't run, so the world is frozen underneath. The only GL resource it
- * owns is the panel's white pixel, freed in {@link #dispose}.
+ * stack, {@code PlayState.update} doesn't run, so the world is frozen underneath. Owns the shared editor
+ * font + white pixel (passed to the panel and picker); freed in {@link #dispose}.
  */
 public final class EditorState extends GameState {
     private static final float PAN_SPEED = 1800f;  // world units/sec at zoom 1 (scaled up when zoomed out)
@@ -35,9 +41,15 @@ public final class EditorState extends GameState {
     private final WorldRenderer worldRenderer;     // shared: draws PlayState's live world layers
     private final GameCamera camera;               // the editor's own free camera
     private final InputBindings input = new InputBindings();
-    private final EditorPanel panel;
 
-    // Editable world references (shared with PlayState). Stored for the placement/picker slices.
+    // Shared editor UI resources (owned here).
+    private final Texture white;
+    private final TextureRegion whiteRegion;
+    private final PixelFont font;
+    private final EditorPanel panel;
+    private final SheetPicker picker;
+
+    // Editable world references (shared with PlayState). Used by placement (next slice).
     private final Assets assets;
     private final TilePalette palette;
     private final ChunkedTileLayer decoration;
@@ -45,8 +57,9 @@ public final class EditorState extends GameState {
     private final ChunkedTileLayer collision;
     private final ObjectLayer objects;
 
-    private float camX, camY;                        // world-space camera centre
-    private float zoom = 2f;                         // start zoomed out a little for an overview
+    private int brushTileId = TilePalette.EMPTY;     // the tile the picker last selected
+    private float camX, camY;                         // world-space camera centre
+    private float zoom = 2f;                           // start zoomed out a little for an overview
 
     public EditorState(GameStateManager stateManager, WorldRenderer worldRenderer, Assets assets,
                        TilePalette palette, ChunkedTileLayer decoration, DualGridSoil soil,
@@ -62,22 +75,46 @@ public final class EditorState extends GameState {
         this.camX = startX;
         this.camY = startY;
         camera = new GameCamera(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        panel = new EditorPanel(assets.get("ui/game_font.png"));
+
+        Pixmap pm = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        pm.setColor(Color.WHITE);
+        pm.fill();
+        white = new Texture(pm);
+        pm.dispose();
+        whiteRegion = new TextureRegion(white);
+        font = new PixelFont(assets.get("ui/game_font.png"));
+        panel = new EditorPanel(font, whiteRegion);
+        picker = new SheetPicker(assets, font, whiteRegion);
         applyCamera();
     }
 
     @Override
     public void update(float delta) {
-        // F1 again (or Esc) closes the editor and returns to play.
-        if (input.isJustPressed(InputAction.TOGGLE_EDITOR) || input.isJustPressed(InputAction.QUIT)) {
+        // Esc closes the picker first if it's open, otherwise leaves the editor; F1 always leaves.
+        if (input.isJustPressed(InputAction.QUIT)) {
+            if (picker.isOpen()) { picker.close(); return; }
+            stateManager.pop();
+            return;
+        }
+        if (input.isJustPressed(InputAction.TOGGLE_EDITOR)) {
             stateManager.pop();
             return;
         }
 
-        // Mouse: panel first (toggle tab / pick a tileset). Clicks the panel consumes won't fall through to
-        // the map. Picker + placement come in the next slices.
+        // Mouse. The picker is modal: while open it consumes every click. Otherwise the side panel gets first
+        // refusal (toggle / pick a tileset); a click it doesn't claim falls through to the map (placement is
+        // the next slice).
         if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
-            panel.handleClick(Gdx.input.getX(), Gdx.input.getY(), Gdx.graphics.getHeight());
+            int mx = Gdx.input.getX(), my = Gdx.input.getY();
+            int w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
+            if (picker.isOpen()) {
+                int id = picker.handleClick(mx, my, w, h);
+                if (id != TilePalette.EMPTY) brushTileId = id;
+            } else {
+                EditorPanel.Hit hit = panel.handleClick(mx, my, h);
+                if (hit == EditorPanel.Hit.SHEET) picker.open(panel.selectedSheet());
+                // EditorPanel.Hit.NONE -> a map click; placement lands in the next slice.
+            }
         }
 
         // Free pan — fast, and faster still when zoomed out so crossing the map stays quick.
@@ -105,8 +142,26 @@ public final class EditorState extends GameState {
 
     @Override
     public void render(SpriteBatch batch) {
+        float w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
         worldRenderer.renderForEditor(batch, camera);
-        panel.render(batch, camera.hudCombined(), Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        panel.render(batch, camera.hudCombined(), w, h);
+        if (!picker.isOpen()) renderBrushSwatch(batch, w);
+        picker.render(batch, camera.hudCombined(), w, h, brushTileId);
+    }
+
+    /** A small swatch in the top-right showing the current paint brush, so it's clear what a map click places. */
+    private void renderBrushSwatch(SpriteBatch batch, float screenW) {
+        if (brushTileId == TilePalette.EMPTY) return;
+        TextureRegion r = palette.region(brushTileId);
+        float s = 64f, bx = screenW - s - 16f, by = 16f;
+        batch.setProjectionMatrix(camera.hudCombined());
+        batch.begin();
+        batch.setColor(0.10f, 0.11f, 0.14f, 0.92f);
+        batch.draw(whiteRegion, bx - 6f, by - 6f, s + 12f, s + 26f);
+        batch.setColor(Color.WHITE);
+        if (r != null) batch.draw(r, bx, by, s, s);
+        font.draw(batch, "BRUSH", bx + 2f, by + s + 4f, 12f, 12f, 11f);
+        batch.end();
     }
 
     @Override
@@ -117,6 +172,6 @@ public final class EditorState extends GameState {
 
     @Override
     public void dispose() {
-        panel.dispose();
+        white.dispose();
     }
 }
