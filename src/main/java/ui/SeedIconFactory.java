@@ -126,9 +126,10 @@ public final class SeedIconFactory {
 
     /** Draw the {@code [sx,sy,sw,sh]} region of {@code src} into the label window, scaled by its *visible*
      *  bounds (so the crop fills the window rather than the source's transparent padding), aspect preserved,
-     *  centered. Bilinear for a clean downscale. */
+     *  centered. Nearest-neighbour keeps hard pixel edges — at ~10px a bilinear downscale mushes low-contrast
+     *  crops (potato/pumpkin) into a blur, whereas nearest stays crisp and readable. */
     private void drawOverlay(Pixmap dst, Pixmap src, int sx, int sy, int sw, int sh) {
-        src.setFilter(Pixmap.Filter.BiLinear);
+        src.setFilter(Pixmap.Filter.NearestNeighbour);
         int[] bb = opaqueBounds(src, sx, sy, sw, sh); // {x,y,w,h} of the drawn art, in src coords
         int areaX = OX + WIN_X + WIN_PAD, areaY = OY + WIN_Y + WIN_PAD;
         int areaW = WIN_W - 2 * WIN_PAD, areaH = WIN_H - 2 * WIN_PAD;
