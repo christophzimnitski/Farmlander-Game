@@ -11,11 +11,13 @@ import core.Assets;
 import core.GameState;
 import core.GameStateManager;
 import editor.EditorPanel;
+import editor.PropCatalog;
 import editor.SheetPicker;
 import editor.TilePalette;
 import input.InputAction;
 import input.InputBindings;
 import render.GameCamera;
+import render.TextureSlicer;
 import render.WorldRenderer;
 import ui.PixelFont;
 import world.ChunkedTileLayer;
@@ -40,8 +42,9 @@ public final class EditorState extends GameState {
     private static final float MIN_ZOOM = 0.5f, MAX_ZOOM = 8f;
 
     /** What a left-click/drag on the map does. SOIL paints the dual-grid tilled flag (auto-orienting);
-     *  TILE stamps the picked decoration tile; NONE until a brush is chosen. */
-    private enum BrushMode { NONE, TILE, SOIL }
+     *  TILE stamps the picked decoration tile; PROP drops a free-placed object (one per click, not dragged);
+     *  NONE until a brush is chosen. */
+    private enum BrushMode { NONE, TILE, SOIL, PROP }
 
     private final WorldRenderer worldRenderer;     // shared: draws PlayState's live world layers
     private final GameCamera camera;               // the editor's own free camera
@@ -63,8 +66,11 @@ public final class EditorState extends GameState {
     private final ObjectLayer objects;
 
     private final float tile;                          // world units per cell (== Config.TILE)
+    private final float propScale;                     // world units per source pixel (tile / 32) for props
     private BrushMode mode = BrushMode.NONE;
     private int brushTileId = TilePalette.EMPTY;     // the tile the picker last selected (TILE mode)
+    private PropCatalog.Prop brushProp;               // the prop selected (PROP mode)
+    private TextureRegion brushPropRegion;            // its sliced region (swatch + ghost preview)
     private float camX, camY;                         // world-space camera centre
     private float zoom = 2f;                           // start zoomed out a little for an overview
 
@@ -80,6 +86,7 @@ public final class EditorState extends GameState {
         this.collision = collision;
         this.objects = objects;
         this.tile = decoration.tileSize();
+        this.propScale = tile / 32f; // source props are 32px tiles; scale them to world units like everything else
         this.camX = startX;
         this.camY = startY;
         camera = new GameCamera(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
@@ -122,11 +129,20 @@ public final class EditorState extends GameState {
             } else {
                 EditorPanel.Hit hit = panel.handleClick(mx, my, h);
                 if (hit == EditorPanel.Hit.SHEET) selectSheet(panel.selectedSheet());
+                else if (hit == EditorPanel.Hit.PROP) selectProp(panel.selectedProp());
             }
         }
         if (!overUi) {
-            if (Gdx.input.isButtonPressed(Input.Buttons.LEFT)) paintAt(mx, my);
-            else if (Gdx.input.isButtonPressed(Input.Buttons.RIGHT)) eraseAt(mx, my);
+            // Props place one-per-click (edge); tiles/soil paint continuously while held. Right-click erases:
+            // held to scrub tiles, but only the just-pressed frame removes a prop (so a held drag can't nuke a stack).
+            if (mode == BrushMode.PROP) {
+                if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) placePropAt(mx, my);
+            } else if (Gdx.input.isButtonPressed(Input.Buttons.LEFT)) {
+                paintAt(mx, my);
+            }
+            if (Gdx.input.isButtonPressed(Input.Buttons.RIGHT)) {
+                eraseAt(mx, my, Gdx.input.isButtonJustPressed(Input.Buttons.RIGHT));
+            }
         }
 
         // Free pan — fast, and faster still when zoomed out so crossing the map stays quick.
@@ -162,6 +178,27 @@ public final class EditorState extends GameState {
         }
     }
 
+    /** A prop row was clicked: switch to the prop brush and slice its sprite once for the swatch/ghost. */
+    private void selectProp(int propIndex) {
+        mode = BrushMode.PROP;
+        brushProp = PropCatalog.get(propIndex);
+        brushPropRegion = TextureSlicer.subRegion(assets.get(PropCatalog.SHEET),
+                brushProp.x, brushProp.y, brushProp.w, brushProp.h);
+    }
+
+    /** Drop the current prop with its base centred on the cursor (where it "stands"). */
+    private void placePropAt(int screenX, int screenY) {
+        if (brushProp == null) return;
+        var wp = camera.unproject(screenX, screenY);
+        float dw = brushProp.w * propScale, dh = brushProp.h * propScale;
+        float wx = wp.x - dw / 2f, wy = wp.y - dh; // cursor at the prop's base centre
+        PlacedObject o = new PlacedObject(PropCatalog.SHEET, brushProp.x, brushProp.y, brushProp.w, brushProp.h,
+                wx, wy, dw, dh);
+        o.setRegion(TextureSlicer.subRegion(assets.get(PropCatalog.SHEET),
+                brushProp.x, brushProp.y, brushProp.w, brushProp.h));
+        objects.add(o);
+    }
+
     /** Paint the current brush at the cell under the cursor. */
     private void paintAt(int screenX, int screenY) {
         var wp = camera.unproject(screenX, screenY);
@@ -174,11 +211,15 @@ public final class EditorState extends GameState {
         }
     }
 
-    /** Erase under the cursor: the top-most prop if one is there, else the cell's decoration tile + soil. */
-    private void eraseAt(int screenX, int screenY) {
+    /** Erase under the cursor. When {@code allowObject} (the right-button just went down) and a prop is under
+     *  the cursor, remove that prop; otherwise clear the cell's decoration tile + soil (so a held right-drag
+     *  scrubs tiles without nuking a stack of props). */
+    private void eraseAt(int screenX, int screenY, boolean allowObject) {
         var wp = camera.unproject(screenX, screenY);
-        PlacedObject hit = objects.topAt(wp.x, wp.y);
-        if (hit != null) { objects.remove(hit); return; }
+        if (allowObject) {
+            PlacedObject hit = objects.topAt(wp.x, wp.y);
+            if (hit != null) { objects.remove(hit); return; }
+        }
         int col = decoration.colAtWorldX(wp.x), row = decoration.rowAtWorldY(wp.y);
         if (!decoration.inBounds(col, row)) return;
         decoration.set(col, row, TilePalette.EMPTY);
@@ -195,46 +236,65 @@ public final class EditorState extends GameState {
         picker.render(batch, camera.hudCombined(), w, h, brushTileId);
     }
 
-    /** Outline the cell under the cursor (world space) and, for a tile brush, preview the tile there. Skipped
-     *  when the cursor is over the panel/tab so the ghost doesn't flash while using the UI. */
+    /** Preview the brush under the cursor (world space): a prop ghost at the cursor's base, or the hovered
+     *  cell outlined with a tile preview. Skipped when the cursor is over the panel/tab. */
     private void renderHover(SpriteBatch batch, float screenH) {
         int mx = Gdx.input.getX(), my = Gdx.input.getY();
         if (panel.contains(mx, my, screenH)) return;
         var wp = camera.unproject(mx, my);
-        int col = decoration.colAtWorldX(wp.x), row = decoration.rowAtWorldY(wp.y);
-        if (!decoration.inBounds(col, row)) return;
-        float wx = col * tile, wy = row * tile;
         batch.setProjectionMatrix(camera.worldCombined());
         batch.begin();
-        if (mode == BrushMode.TILE) {
-            TextureRegion r = palette.region(brushTileId);
-            if (r != null) {
-                batch.setColor(1f, 1f, 1f, 0.5f);
-                batch.draw(r, wx, wy, tile, tile);
+        if (mode == BrushMode.PROP && brushPropRegion != null) {
+            float dw = brushProp.w * propScale, dh = brushProp.h * propScale;
+            batch.setColor(1f, 1f, 1f, 0.55f);
+            batch.draw(brushPropRegion, wp.x - dw / 2f, wp.y - dh, dw, dh);
+            batch.setColor(Color.WHITE);
+        } else {
+            int col = decoration.colAtWorldX(wp.x), row = decoration.rowAtWorldY(wp.y);
+            if (decoration.inBounds(col, row)) {
+                float wx = col * tile, wy = row * tile;
+                if (mode == BrushMode.TILE) {
+                    TextureRegion r = palette.region(brushTileId);
+                    if (r != null) {
+                        batch.setColor(1f, 1f, 1f, 0.5f);
+                        batch.draw(r, wx, wy, tile, tile);
+                        batch.setColor(Color.WHITE);
+                    }
+                }
+                float t = 2f * zoom; // keep the outline visible when zoomed out
+                batch.setColor(1f, 1f, 0.3f, 0.9f);
+                batch.draw(whiteRegion, wx, wy, tile, t);
+                batch.draw(whiteRegion, wx, wy + tile - t, tile, t);
+                batch.draw(whiteRegion, wx, wy, t, tile);
+                batch.draw(whiteRegion, wx + tile - t, wy, t, tile);
+                batch.setColor(Color.WHITE);
             }
         }
-        float t = 2f * zoom; // keep the outline visible when zoomed out
-        batch.setColor(1f, 1f, 0.3f, 0.9f);
-        batch.draw(whiteRegion, wx, wy, tile, t);
-        batch.draw(whiteRegion, wx, wy + tile - t, tile, t);
-        batch.draw(whiteRegion, wx, wy, t, tile);
-        batch.draw(whiteRegion, wx + tile - t, wy, t, tile);
-        batch.setColor(Color.WHITE);
         batch.end();
     }
 
-    /** A small swatch in the top-right showing the current paint brush, so it's clear what a map click places. */
+    /** A small swatch in the top-right showing the current paint brush (tile, prop or soil), so it's clear
+     *  what a map click will place. */
     private void renderBrushSwatch(SpriteBatch batch, float screenW) {
-        if (brushTileId == TilePalette.EMPTY) return;
-        TextureRegion r = palette.region(brushTileId);
+        TextureRegion r;
+        int srcW, srcH;
+        String label;
+        if (mode == BrushMode.TILE) { r = palette.region(brushTileId); srcW = srcH = 32; label = "TILE"; }
+        else if (mode == BrushMode.PROP) { r = brushPropRegion; srcW = brushProp.w; srcH = brushProp.h; label = "PROP"; }
+        else if (mode == BrushMode.SOIL) { r = null; srcW = srcH = 1; label = "SOIL"; }
+        else return; // NONE
         float s = 64f, bx = screenW - s - 16f, by = 16f;
         batch.setProjectionMatrix(camera.hudCombined());
         batch.begin();
         batch.setColor(0.10f, 0.11f, 0.14f, 0.92f);
         batch.draw(whiteRegion, bx - 6f, by - 6f, s + 12f, s + 26f);
         batch.setColor(Color.WHITE);
-        if (r != null) batch.draw(r, bx, by, s, s);
-        font.draw(batch, "BRUSH", bx + 2f, by + s + 4f, 12f, 12f, 11f);
+        if (r != null) {
+            float aspect = srcW / (float) srcH, dw = s, dh = s;
+            if (aspect >= 1f) dh = s / aspect; else dw = s * aspect; // fit into the swatch, keep aspect
+            batch.draw(r, bx + (s - dw) / 2f, by + (s - dh) / 2f, dw, dh);
+        }
+        font.draw(batch, label, bx + 2f, by + s + 4f, 12f, 12f, 11f);
         batch.end();
     }
 
