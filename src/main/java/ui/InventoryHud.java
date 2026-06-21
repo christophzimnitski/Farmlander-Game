@@ -305,9 +305,8 @@ public final class InventoryHud {
     private TextureRegion icon(int id) {
         if (iconCache.containsKey(id)) return iconCache.get(id);
         TextureRegion region;
-        int cropIndex = itemRegistry.cropIndexFor(id);
-        if (cropIndex >= 0) { // a seed: composite a packet (caches in the factory too)
-            region = seedIcons.get(id, cropIndex, itemRegistry.seedOverlayPath(id));
+        if (itemRegistry.cropIndexFor(id) >= 0) { // a seed: composite a packet (caches in the factory too)
+            region = seedIcons.get(id, itemRegistry.seedOverlayPath(id));
         } else {
             region = null;
             String path = itemRegistry.iconPath(id);
