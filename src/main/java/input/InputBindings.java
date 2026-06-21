@@ -32,6 +32,7 @@ public final class InputBindings {
         bind(InputAction.USE_TOOL,       Input.Keys.Q);
         bind(InputAction.HARVEST,        Input.Keys.E);
         bind(InputAction.QUIT,           Input.Keys.ESCAPE);
+        bind(InputAction.TOGGLE_EDITOR,  Input.Keys.F1);
     }
 
     /** Rebind an action to one or more physical keys ({@code Input.Keys} codes), replacing its current keys. */

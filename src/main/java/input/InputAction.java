@@ -18,5 +18,6 @@ public enum InputAction {
     OPEN_INVENTORY,  // toggle the inventory popup (the 3x10 bag over the hotbar)
     USE_TOOL,        // trigger the held tool's action (e.g. till)
     HARVEST,         // harvest the crop under the cursor
-    QUIT             // exit the game
+    QUIT,            // exit the game
+    TOGGLE_EDITOR    // open/close the map editor (gated by Config.EDITOR_ENABLED)
 }

@@ -14,6 +14,14 @@ public final class Config {
     public static final String TITLE = "Farmlander";
     public static final boolean VSYNC = true;
 
+    // --- Tooling ---
+    /**
+     * Master switch for the in-game map editor. When true, the editor toggle key (see InputBindings'
+     * TOGGLE_EDITOR, F1) opens a free-camera editing scene over the world; when false the key does nothing
+     * and the editor is never entered (the shipping-build state). Flip this one flag to disable the tool.
+     */
+    public static final boolean EDITOR_ENABLED = true;
+
     // --- World ---
     /** World units per tile cell. (Historically 64px art at 1.5 zoom; the zoom is now baked in here.) */
     public static final float TILE = 96f;
