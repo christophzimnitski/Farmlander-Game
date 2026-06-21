@@ -68,7 +68,7 @@ public class PlayState extends GameState {
     // Starter seed packet, as {cropIndex, count} pairs (Potato 0, Carrot 6, Cauliflower 44, Pumpkin 28 — all
     // have field + food art). Granted when the player holds no seeds. Until a shop exists (the next slice) and
     // with produce-only harvest, this is the whole seed supply, so it can run out — see grantStarterSeeds.
-    private static final int[][] STARTER_SEEDS = { {0, 15}, {6, 15}, {44, 10}, {28, 10} };
+    private static final int[][] STARTER_SEEDS = { {0, 10}, {6, 10}, {44, 10}, {28, 10} };
     // Crop sprite/footprint geometry on a cell lives in CropGeometry (shared by collision, planting, draw).
     private final CropGeometry cropGeometry = new CropGeometry(Config.TILE);
 
@@ -268,24 +268,27 @@ public class PlayState extends GameState {
         }
     }
 
-    /** Give the player the {@link #STARTER_SEEDS} packet, but only if they hold no seeds at all — so a fresh
-     *  farm (or a save from before the seed economy, whose old crop items are now <em>produce</em> and can't be
-     *  replanted) has something to plant. Seeds fill the first empty slots, after tools.
+    /** Set each {@link #STARTER_SEEDS} crop to its target count on load — so a fresh farm (or a save from before
+     *  the seed economy, whose old crop items are now <em>produce</em> and can't be replanted) always has seeds
+     *  to plant. A missing starter is added to the first empty slot, after tools.
      *
-     *  <p>Stopgap: with produce-only harvest and no shop yet, seeds have no other source, so this refills a
-     *  seedless player on load to avoid stranding them. Once the shop slice lands (the real seed source), this
-     *  should be restricted to fresh worlds (no reload-refill). */
+     *  <p>Stopgap: with produce-only harvest and no shop yet, seeds have no other source, so this keeps a fixed
+     *  baseline (currently 10 of each) plantable every load. Once the shop slice lands (the real seed source),
+     *  this should be restricted to fresh worlds (no reload-refill). */
     private void grantStarterSeeds() {
-        for (int id : inventoryItems) if (itemRegistry.cropIndexFor(id) >= 0) return; // already holds a seed
         for (int[] pack : STARTER_SEEDS) {
             CropType crop = cropRegistry.get(pack[0]);
             if (crop == null) continue;
+            int seedId = crop.seedItemId, target = pack[1];
+            int slot = -1, firstEmpty = -1;
             for (int i = 0; i < inventoryItems.length; i++) {
-                if (inventoryItems[i] == Inventory.EMPTY) {
-                    inventoryItems[i] = crop.seedItemId;
-                    inventoryAmounts[i] = pack[1];
-                    break;
-                }
+                if (inventoryItems[i] == seedId) { slot = i; break; }
+                if (firstEmpty < 0 && inventoryItems[i] == Inventory.EMPTY) firstEmpty = i;
+            }
+            if (slot < 0) slot = firstEmpty;
+            if (slot >= 0) {
+                inventoryItems[slot] = seedId;
+                inventoryAmounts[slot] = target;
             }
         }
     }
