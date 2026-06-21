@@ -112,6 +112,16 @@ public final class EditorPanel {
         return Hit.PANEL; // clicked the panel chrome (title/header/footer) — consume, no-op
     }
 
+    /** Is a screen point over the panel chrome (body when open, plus the tab)? Lets the editor tell a UI
+     *  click from a map paint stroke without mutating any state (unlike {@link #handleClick}). */
+    public boolean contains(float x, float y, float screenH) {
+        float px = panelX();
+        float tabX = px + PANEL_W, tabY = screenH / 2f - TAB_H / 2f;
+        if (within(x, y, tabX, tabY, TAB_W, TAB_H)) return true;
+        if (collapsed) return false;
+        return within(x, y, px, 0, PANEL_W, screenH);
+    }
+
     private static boolean within(float px, float py, float x, float y, float w, float h) {
         return px >= x && px < x + w && py >= y && py < y + h;
     }

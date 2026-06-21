@@ -21,6 +21,7 @@ import ui.PixelFont;
 import world.ChunkedTileLayer;
 import world.DualGridSoil;
 import world.ObjectLayer;
+import world.PlacedObject;
 
 /**
  * The map editor scene, pushed over {@link PlayState} by F1 (see {@code Config.EDITOR_ENABLED} +
@@ -37,6 +38,10 @@ public final class EditorState extends GameState {
     private static final float PAN_SPEED = 1800f;  // world units/sec at zoom 1 (scaled up when zoomed out)
     private static final float ZOOM_RATE = 1.8f;   // multiplicative zoom per second while held
     private static final float MIN_ZOOM = 0.5f, MAX_ZOOM = 8f;
+
+    /** What a left-click/drag on the map does. SOIL paints the dual-grid tilled flag (auto-orienting);
+     *  TILE stamps the picked decoration tile; NONE until a brush is chosen. */
+    private enum BrushMode { NONE, TILE, SOIL }
 
     private final WorldRenderer worldRenderer;     // shared: draws PlayState's live world layers
     private final GameCamera camera;               // the editor's own free camera
@@ -57,7 +62,9 @@ public final class EditorState extends GameState {
     private final ChunkedTileLayer collision;
     private final ObjectLayer objects;
 
-    private int brushTileId = TilePalette.EMPTY;     // the tile the picker last selected
+    private final float tile;                          // world units per cell (== Config.TILE)
+    private BrushMode mode = BrushMode.NONE;
+    private int brushTileId = TilePalette.EMPTY;     // the tile the picker last selected (TILE mode)
     private float camX, camY;                         // world-space camera centre
     private float zoom = 2f;                           // start zoomed out a little for an overview
 
@@ -72,6 +79,7 @@ public final class EditorState extends GameState {
         this.soil = soil;
         this.collision = collision;
         this.objects = objects;
+        this.tile = decoration.tileSize();
         this.camX = startX;
         this.camY = startY;
         camera = new GameCamera(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
@@ -101,20 +109,24 @@ public final class EditorState extends GameState {
             return;
         }
 
-        // Mouse. The picker is modal: while open it consumes every click. Otherwise the side panel gets first
-        // refusal (toggle / pick a tileset); a click it doesn't claim falls through to the map (placement is
-        // the next slice).
+        // Mouse. UI clicks are edge-triggered (the picker is modal; otherwise the panel gets first refusal);
+        // paint strokes are continuous (held) but only over the map, never over the panel/picker.
+        int mx = Gdx.input.getX(), my = Gdx.input.getY();
+        int w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
+        boolean overUi = picker.isOpen() || panel.contains(mx, my, h);
+
         if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
-            int mx = Gdx.input.getX(), my = Gdx.input.getY();
-            int w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
             if (picker.isOpen()) {
                 int id = picker.handleClick(mx, my, w, h);
-                if (id != TilePalette.EMPTY) brushTileId = id;
+                if (id != TilePalette.EMPTY) { brushTileId = id; mode = BrushMode.TILE; }
             } else {
                 EditorPanel.Hit hit = panel.handleClick(mx, my, h);
-                if (hit == EditorPanel.Hit.SHEET) picker.open(panel.selectedSheet());
-                // EditorPanel.Hit.NONE -> a map click; placement lands in the next slice.
+                if (hit == EditorPanel.Hit.SHEET) selectSheet(panel.selectedSheet());
             }
+        }
+        if (!overUi) {
+            if (Gdx.input.isButtonPressed(Input.Buttons.LEFT)) paintAt(mx, my);
+            else if (Gdx.input.isButtonPressed(Input.Buttons.RIGHT)) eraseAt(mx, my);
         }
 
         // Free pan — fast, and faster still when zoomed out so crossing the map stays quick.
@@ -140,13 +152,75 @@ public final class EditorState extends GameState {
         camera.follow(camX, camY);
     }
 
+    /** A tileset row was clicked: the plow sheet paints soil (auto-orienting via the dual grid, no per-tile
+     *  pick); every other sheet opens the picker to choose a specific tile. */
+    private void selectSheet(int sheetIndex) {
+        if (TilePalette.sheet(sheetIndex).path.equals("tilesets/plowed_soil.png")) {
+            mode = BrushMode.SOIL;
+        } else {
+            picker.open(sheetIndex);
+        }
+    }
+
+    /** Paint the current brush at the cell under the cursor. */
+    private void paintAt(int screenX, int screenY) {
+        var wp = camera.unproject(screenX, screenY);
+        int col = decoration.colAtWorldX(wp.x), row = decoration.rowAtWorldY(wp.y);
+        if (!decoration.inBounds(col, row)) return;
+        switch (mode) {
+            case TILE -> { if (TilePalette.isValid(brushTileId)) decoration.set(col, row, brushTileId); }
+            case SOIL -> soil.till(col, row);
+            case NONE -> { }
+        }
+    }
+
+    /** Erase under the cursor: the top-most prop if one is there, else the cell's decoration tile + soil. */
+    private void eraseAt(int screenX, int screenY) {
+        var wp = camera.unproject(screenX, screenY);
+        PlacedObject hit = objects.topAt(wp.x, wp.y);
+        if (hit != null) { objects.remove(hit); return; }
+        int col = decoration.colAtWorldX(wp.x), row = decoration.rowAtWorldY(wp.y);
+        if (!decoration.inBounds(col, row)) return;
+        decoration.set(col, row, TilePalette.EMPTY);
+        soil.clear(col, row);
+    }
+
     @Override
     public void render(SpriteBatch batch) {
         float w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
         worldRenderer.renderForEditor(batch, camera);
+        if (!picker.isOpen()) renderHover(batch, h);
         panel.render(batch, camera.hudCombined(), w, h);
         if (!picker.isOpen()) renderBrushSwatch(batch, w);
         picker.render(batch, camera.hudCombined(), w, h, brushTileId);
+    }
+
+    /** Outline the cell under the cursor (world space) and, for a tile brush, preview the tile there. Skipped
+     *  when the cursor is over the panel/tab so the ghost doesn't flash while using the UI. */
+    private void renderHover(SpriteBatch batch, float screenH) {
+        int mx = Gdx.input.getX(), my = Gdx.input.getY();
+        if (panel.contains(mx, my, screenH)) return;
+        var wp = camera.unproject(mx, my);
+        int col = decoration.colAtWorldX(wp.x), row = decoration.rowAtWorldY(wp.y);
+        if (!decoration.inBounds(col, row)) return;
+        float wx = col * tile, wy = row * tile;
+        batch.setProjectionMatrix(camera.worldCombined());
+        batch.begin();
+        if (mode == BrushMode.TILE) {
+            TextureRegion r = palette.region(brushTileId);
+            if (r != null) {
+                batch.setColor(1f, 1f, 1f, 0.5f);
+                batch.draw(r, wx, wy, tile, tile);
+            }
+        }
+        float t = 2f * zoom; // keep the outline visible when zoomed out
+        batch.setColor(1f, 1f, 0.3f, 0.9f);
+        batch.draw(whiteRegion, wx, wy, tile, t);
+        batch.draw(whiteRegion, wx, wy + tile - t, tile, t);
+        batch.draw(whiteRegion, wx, wy, t, tile);
+        batch.draw(whiteRegion, wx + tile - t, wy, t, tile);
+        batch.setColor(Color.WHITE);
+        batch.end();
     }
 
     /** A small swatch in the top-right showing the current paint brush, so it's clear what a map click places. */
