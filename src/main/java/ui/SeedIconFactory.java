@@ -34,7 +34,8 @@ public final class SeedIconFactory {
     private static final int OX = (CANVAS - ART_W) / 2, OY = (CANVAS - ART_H) / 2; // packet offset on the canvas
     // The label window where the crop sprite sits, in packet-art coords (frame x6–20,y16–25 minus the art origin).
     private static final int WIN_X = 3, WIN_Y = 14, WIN_W = 15, WIN_H = 10;
-    private static final int WIN_PAD = 1; // inset so the crop fills the window ~80%, not edge-to-edge
+    private static final int WIN_PAD = 2; // inset so the crop sits inside the window with margin on all sides
+                                          // (filling it edge-to-edge read as the crop being clipped by the frame)
 
     private final Map<Integer, TextureRegion> cache = new HashMap<>();
     private final List<Texture> owned = new ArrayList<>();
