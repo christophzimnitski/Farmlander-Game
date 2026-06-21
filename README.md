@@ -67,8 +67,8 @@ Five tools, each held like an inventory item and selected from the hotbar:
 
 Seeds and produce are **distinct items**. You plant a **seed** (consumed); when the crop
 matures, harvesting it (`E`) yields **produce** — a sellable good you can't replant. A new
-farm starts with a starter seed packet (Potato, Carrot, Cauliflower, Pumpkin). Seeds have
-no art yet, so each is shown as a generated paper packet with its crop on the label.
+farm starts with a starter seed packet (Potato, Carrot, Cauliflower, Pumpkin). Each seed's
+icon is composited from a shared paper-packet sprite with its crop drawn on the label window.
 
 > Harvest is **produce-only** and there's no shop yet, so seeds are finite. As a stopgap,
 > a seedless player is re-granted the starter packet on load — this becomes fresh-worlds-only
