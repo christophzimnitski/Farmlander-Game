@@ -25,6 +25,18 @@ public final class TextureSlicer {
     }
 
     /**
+     * An arbitrary source rect ({@code x,y,w,h} in sheet pixels) as one Y-flipped, half-texel-inset region.
+     * Used for free-placed objects (boats, stalls, …) cut from a sheet at a non-tile-aligned rect.
+     */
+    public static TextureRegion subRegion(Texture texture, int x, int y, int w, int h) {
+        float tw = texture.getWidth(), th = texture.getHeight();
+        TextureRegion r = new TextureRegion(texture);
+        r.setRegion((x + PAD) / tw, (y + PAD) / th, (x + w - PAD) / tw, (y + h - PAD) / th);
+        r.flip(false, true);
+        return r;
+    }
+
+    /**
      * Slice a {@code rows}×{@code cols} grid of 32px tiles into a 1-based array (index 0 unused, so tile
      * values from the save/autotiler map straight to {@code regions[value]}).
      */

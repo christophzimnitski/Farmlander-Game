@@ -6,11 +6,16 @@ import com.badlogic.gdx.math.Rectangle;
 import crops.CropField;
 import crops.CropGeometry;
 import crops.PlantedCrop;
+import editor.TilePalette;
 import entities.PlayerCharacter;
 import tools.ToolAction;
 import tools.ToolActionSystem;
 import world.ChunkedTileLayer;
 import world.DualGridSoil;
+import world.ObjectLayer;
+import world.PlacedObject;
+
+import java.util.List;
 
 /**
  * Draws the world for the play screen: the grass layer, the dual-grid soil, the watered-soil blobs, the
@@ -29,8 +34,11 @@ public final class WorldRenderer {
     private final ChunkedTileLayer grass;
     private final DualGridSoil soil;
     private final ChunkedTileLayer collision;
+    private final ChunkedTileLayer decoration; // editor-placed visual tiles (palette ids), flat above grass/soil
     private final CropField crops;
+    private final ObjectLayer objects;         // free-placed props (boats, stalls, …), depth-sorted with the player
     private final CropGeometry cropGeometry;
+    private final TilePalette palette;         // resolves decoration ids -> regions
     private final float tile;
 
     private final TextureRegion[] grassRegions, soilRegions, collisionRegions;
@@ -41,7 +49,8 @@ public final class WorldRenderer {
                          CropGeometry cropGeometry, float tile,
                          TextureRegion[] grassRegions, TextureRegion[] soilRegions,
                          TextureRegion[] collisionRegions, TextureRegion[] wateredRegions,
-                         TextureRegion frameRegion) {
+                         TextureRegion frameRegion,
+                         ChunkedTileLayer decoration, ObjectLayer objects, TilePalette palette) {
         this.grass = grass;
         this.soil = soil;
         this.collision = collision;
@@ -53,6 +62,9 @@ public final class WorldRenderer {
         this.collisionRegions = collisionRegions;
         this.wateredRegions = wateredRegions;
         this.frameRegion = frameRegion;
+        this.decoration = decoration;
+        this.objects = objects;
+        this.palette = palette;
     }
 
     /** One world pass: grass → soil → watered blobs → highlight → crops/bushes/player depth-sorted, between
@@ -71,12 +83,36 @@ public final class WorldRenderer {
         drawArray(batch, grass, grassRegions, view);
         drawSoil(batch, view);
         drawWateredBlobs(batch, view);
+        drawDecoration(batch, view);              // editor-placed tiles, flat above the ground
         drawHighlight(batch, highlightCol, highlightRow);
         drawCrops(batch, feetY, false, view);     // crops rooted above the player -> behind
         drawCollision(batch, feetY, false, view); // bushes behind
+        drawObjects(batch, feetY, false, view);   // props behind
         drawPlayer(batch, player, toolActions);
+        drawObjects(batch, feetY, true, view);    // props in front
         drawCollision(batch, feetY, true, view);  // bushes in front
         drawCrops(batch, feetY, true, view);      // crops rooted at/below the player -> in front
+        batch.end();
+    }
+
+    /**
+     * Draw the world for the editor: every ground layer plus all crops/bushes/props, with no player and no
+     * tool highlight. With no feet position to split depth around, entities draw in a single back-to-front
+     * layer order (bushes, props, crops) — good enough for an authoring view. Manages its own begin/end so
+     * the editor can layer its own HUD overlays afterwards.
+     */
+    public void renderForEditor(SpriteBatch batch, GameCamera camera) {
+        Rectangle view = camera.worldViewBounds();
+        float feetY = Float.MAX_VALUE; // no player: feetY >= threshold is always true, so one "behind" pass draws all
+        batch.setProjectionMatrix(camera.worldCombined());
+        batch.begin();
+        drawArray(batch, grass, grassRegions, view);
+        drawSoil(batch, view);
+        drawWateredBlobs(batch, view);
+        drawDecoration(batch, view);
+        drawCollision(batch, feetY, false, view);
+        drawObjects(batch, feetY, false, view);
+        drawCrops(batch, feetY, false, view);
         batch.end();
     }
 
@@ -97,6 +133,35 @@ public final class WorldRenderer {
                     batch.draw(regions[v], j * tile, i * tile, tile, tile);
                 }
             }
+        }
+    }
+
+    /** Editor-placed decoration tiles: cell-aligned, resolved through the {@link TilePalette} so any sheet's
+     *  tiles can sit in one grid. Drawn flat (no depth split) above the ground and below crops/bushes/props. */
+    private void drawDecoration(SpriteBatch batch, Rectangle view) {
+        int loCol = minCol(view.x, decoration.cols()), hiCol = maxCol(view.x + view.width, decoration.cols());
+        int loRow = minCol(view.y, decoration.rows()), hiRow = maxCol(view.y + view.height, decoration.rows());
+        for (int j = loCol; j <= hiCol; j++) {
+            for (int i = loRow; i <= hiRow; i++) {
+                int id = decoration.get(j, i);
+                if (id == TilePalette.EMPTY) continue;
+                TextureRegion r = palette.region(id);
+                if (r != null) batch.draw(r, j * tile, i * tile, tile, tile);
+            }
+        }
+    }
+
+    /** Free-placed props, depth-split around the player by their base line (same rule as the bushes). Each
+     *  object is view-culled by its draw box; props whose region hasn't been built yet are skipped. */
+    private void drawObjects(SpriteBatch batch, float feetY, boolean inFront, Rectangle view) {
+        List<PlacedObject> all = objects.all();
+        for (int i = 0; i < all.size(); i++) {
+            PlacedObject o = all.get(i);
+            if (o.region() == null) continue;
+            if (o.worldX + o.drawW < view.x || o.worldX > view.x + view.width
+                    || o.worldY + o.drawH < view.y || o.worldY > view.y + view.height) continue;
+            boolean drawIt = inFront ? (feetY <= o.baseY()) : (feetY >= o.baseY());
+            if (drawIt) batch.draw(o.region(), o.worldX, o.worldY, o.drawW, o.drawH);
         }
     }
 

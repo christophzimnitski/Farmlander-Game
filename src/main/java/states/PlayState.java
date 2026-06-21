@@ -18,6 +18,7 @@ import crops.data.DefaultCropDataSource;
 import crops.data.JsonCropDataSource;
 import data.AssetManifest;
 import data.ProbeLoader;
+import editor.TilePalette;
 import entities.Inventory;
 import entities.PlayerCharacter;
 import farm.FarmInteraction;
@@ -45,6 +46,7 @@ import tools.data.ToolActionDataSource;
 import tools.data.ToolActionBlueprint;
 import world.ChunkedTileLayer;
 import world.DualGridSoil;
+import world.ObjectLayer;
 
 import static entities.PlayerAnimations.playerAnimationArrays;
 
@@ -89,6 +91,11 @@ public class PlayState extends GameState {
     private final ChunkedTileLayer grassLayer, collisionLayer;
     private final long worldSeed; // seed that generated this bounded world's grass (persisted in the save)
     private final DualGridSoil soil;
+    // Editor-authored world content (empty in play until a map is loaded / placements are made): a generic
+    // decoration tile layer (any sheet, via the palette) and free-placed props. Shared with EditorState.
+    private final TilePalette palette = new TilePalette(assets);
+    private final ChunkedTileLayer decorationLayer;
+    private final ObjectLayer objectLayer = new ObjectLayer();
     private final CollisionResolver collisionResolver;
     private final PlayerCharacter player; // position, facing, tool, walk animation; also the collision Body
     private final int[] inventoryItems, inventoryAmounts; // live refs into the Inventory built at load
@@ -183,6 +190,7 @@ public class PlayState extends GameState {
         grassLayer = loaded.grass();
         soil = loaded.soil();
         worldSeed = loaded.worldSeed();
+        decorationLayer = new ChunkedTileLayer(collisionLayer.cols(), collisionLayer.rows(), Config.TILE);
         inventoryItems = loaded.inventoryItems();     // shared refs: mutating these mutates the loaded inventory
         inventoryAmounts = loaded.inventoryAmounts();
         selectedSlot = loaded.selectedSlot();
@@ -222,7 +230,8 @@ public class PlayState extends GameState {
                 inventoryItems, inventoryAmounts, cropRegistry, worldSeed);
         worldPersistence.restoreCrops(loaded.crops());
         worldRenderer = new WorldRenderer(grassLayer, soil, collisionLayer, cropField, cropGeometry, Config.TILE,
-                grassRegions, soilRegions, collisionRegions, wateredRegions, frameRegion);
+                grassRegions, soilRegions, collisionRegions, wateredRegions, frameRegion,
+                decorationLayer, objectLayer, palette);
         farmInteraction = new FarmInteraction(soil, cropField, cropRegistry, itemRegistry, cropGeometry,
                 collisionResolver, gameCamera, player, inventoryItems, inventoryAmounts);
         syncSelectedTool(); // initial held tool reflects the selected hotbar slot
