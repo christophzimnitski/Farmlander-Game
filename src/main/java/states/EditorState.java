@@ -44,7 +44,7 @@ import java.util.function.BooleanSupplier;
 public final class EditorState extends GameState {
     private static final float PAN_SPEED = 1800f;  // world units/sec at zoom 1 (scaled up when zoomed out)
     private static final float ZOOM_RATE = 1.8f;   // multiplicative zoom per second while held
-    private static final float SCROLL_STEP = 1.15f; // zoom factor per mouse-wheel notch
+    private static final float SCROLL_STEP = 1.07f; // zoom factor per mouse-wheel notch (~half the prior rate)
     private static final float MIN_ZOOM = 0.5f, MAX_ZOOM = 8f;
 
     /** What a left-click/drag on the map does. SOIL paints the dual-grid tilled flag (auto-orienting); BUSH
