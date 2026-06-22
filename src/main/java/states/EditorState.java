@@ -25,6 +25,8 @@ import world.ChunkedTileLayer;
 import world.DualGridSoil;
 import world.ObjectLayer;
 import world.PlacedObject;
+import world.layer.LayerStack;
+import world.layer.MapLayer;
 
 /**
  * The map editor scene, pushed over {@link PlayState} by F1 (see {@code Config.EDITOR_ENABLED} +
@@ -44,8 +46,9 @@ public final class EditorState extends GameState {
 
     /** What a left-click/drag on the map does. SOIL paints the dual-grid tilled flag (auto-orienting); BUSH
      *  paints an auto-orienting 9-slice clump into the collision layer; TILE stamps the picked decoration
-     *  tile; PROP drops a free-placed object (one per click, not dragged); NONE until a brush is chosen. */
-    private enum BrushMode { NONE, TILE, SOIL, BUSH, PROP }
+     *  tile; LAYER paints the active editor stack layer (sand/sand-water/fence/props); PROP drops a free
+     *  object (legacy); NONE until a brush is chosen. */
+    private enum BrushMode { NONE, TILE, SOIL, BUSH, LAYER, PROP }
 
     private final WorldRenderer worldRenderer;     // shared: draws PlayState's live world layers
     private final GameCamera camera;               // the editor's own free camera
@@ -65,6 +68,7 @@ public final class EditorState extends GameState {
     private final DualGridSoil soil;
     private final ChunkedTileLayer collision;
     private final ObjectLayer objects;
+    private final LayerStack layerStack;
 
     private final float tile;                          // world units per cell (== Config.TILE)
     private final float propScale;                     // world units per source pixel (tile / 32) for props
@@ -79,7 +83,8 @@ public final class EditorState extends GameState {
 
     public EditorState(GameStateManager stateManager, WorldRenderer worldRenderer, Assets assets,
                        TilePalette palette, ChunkedTileLayer decoration, DualGridSoil soil,
-                       ChunkedTileLayer collision, ObjectLayer objects, float startX, float startY) {
+                       ChunkedTileLayer collision, ObjectLayer objects, LayerStack layerStack,
+                       float startX, float startY) {
         super(stateManager);
         this.worldRenderer = worldRenderer;
         this.assets = assets;
@@ -88,6 +93,7 @@ public final class EditorState extends GameState {
         this.soil = soil;
         this.collision = collision;
         this.objects = objects;
+        this.layerStack = layerStack;
         this.tile = decoration.tileSize();
         this.propScale = tile / 32f; // source props are 32px tiles; scale them to world units like everything else
         this.bushAutotiler = new BushAutotiler(collision);
@@ -180,7 +186,20 @@ public final class EditorState extends GameState {
             case "tilesets/tallgrass.png"   -> selectBush(sheetIndex, 0);
             case "tilesets/wheat.png"       -> selectBush(sheetIndex, BushAutotiler.SPAN);
             case "tilesets/youngwheat.png"  -> selectBush(sheetIndex, 2 * BushAutotiler.SPAN);
+            case "tilesets/sand.png"        -> activateLayer("Sand");
+            case "tilesets/sandwater.png"   -> activateLayer("Sand water");
             default -> picker.open(sheetIndex);
+        }
+    }
+
+    /** Make the named editor stack layer the active paint target (auto-orienting layers paint on click). */
+    private void activateLayer(String name) {
+        for (int i = 0; i < layerStack.size(); i++) {
+            if (layerStack.get(i).name().equals(name)) {
+                layerStack.setActive(i);
+                mode = BrushMode.LAYER;
+                return;
+            }
         }
     }
 
@@ -221,6 +240,7 @@ public final class EditorState extends GameState {
             case TILE -> { if (TilePalette.isValid(brushTileId)) decoration.set(col, row, brushTileId); }
             case SOIL -> soil.till(col, row);
             case BUSH -> bushAutotiler.paint(col, row, bushBase);
+            case LAYER -> { MapLayer l = layerStack.active(); if (l != null) l.paint(col, row, 1); }
             case PROP, NONE -> { }
         }
     }
@@ -239,6 +259,7 @@ public final class EditorState extends GameState {
         decoration.set(col, row, TilePalette.EMPTY);
         soil.clear(col, row);
         bushAutotiler.erase(col, row); // clears a bush here + re-tiles its neighbours (no-op on non-bush cells)
+        for (MapLayer l : layerStack.all()) l.erase(col, row); // clear any editor layer (sand/fence/props) here
     }
 
     @Override
@@ -299,6 +320,11 @@ public final class EditorState extends GameState {
         }
         else if (mode == BrushMode.PROP) { r = brushPropRegion; srcW = brushProp.w; srcH = brushProp.h; label = "PROP"; }
         else if (mode == BrushMode.SOIL) { r = null; srcW = srcH = 1; label = "SOIL"; }
+        else if (mode == BrushMode.LAYER) {
+            r = null; srcW = srcH = 1;
+            MapLayer l = layerStack.active();
+            label = l != null ? l.name().toUpperCase() : "LAYER";
+        }
         else return; // NONE
         float s = 64f, bx = screenW - s - 16f, by = 16f;
         batch.setProjectionMatrix(camera.hudCombined());

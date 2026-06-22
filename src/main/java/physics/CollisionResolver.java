@@ -4,6 +4,7 @@ import crops.CropField;
 import crops.CropGeometry;
 import crops.PlantedCrop;
 import world.ChunkedTileLayer;
+import world.layer.LayerStack;
 
 /**
  * AABB collision against the world: solid tiles on the collision layer and the footprints of planted
@@ -25,20 +26,22 @@ public final class CollisionResolver {
     private final float tile;
     private final float collidableRaise; // tile/8: collidables are raised so the player rests at their base
     private final float err;             // nudge past the box edge so re-collision doesn't stick
+    private final LayerStack layers;     // editor layers also contribute solidity (e.g. fences)
 
     public CollisionResolver(ChunkedTileLayer collision, CropField crops, CropGeometry cropGeometry,
-                             float tile, float err) {
+                             float tile, float err, LayerStack layers) {
         this.collision = collision;
         this.crops = crops;
         this.cropGeometry = cropGeometry;
         this.tile = tile;
         this.collidableRaise = tile / 8f;
         this.err = err;
+        this.layers = layers;
     }
 
-    /** A solid (blocking) collidable occupies this cell — present and not one of the walkable variants. */
+    /** A solid (blocking) collidable occupies this cell — a bush variant, or a solid editor layer (fence). */
     public boolean isSolid(int col, int row) {
-        return blocks(collision.get(col, row));
+        return blocks(collision.get(col, row)) || layers.blocksAt(col, row);
     }
 
     /** Would the given world-space hitbox overlap any solid tile or planted-crop footprint? */
@@ -51,6 +54,8 @@ public final class CollisionResolver {
             for (int i = loRow; i <= hiRow; i++) {
                 if (blocks(collision.get(j, i))
                         && overlaps(hx, hy, hw, hh, j * tile, i * tile - collidableRaise, tile, tile)) return true;
+                if (layers.blocksAt(j, i)
+                        && overlaps(hx, hy, hw, hh, j * tile, i * tile, tile, tile)) return true;
                 PlantedCrop crop = crops.at(j, i);
                 if (crop != null && !crop.harvested
                         && overlaps(hx, hy, hw, hh, cropGeometry.footprintX(j), cropGeometry.footprintY(i),
@@ -70,6 +75,9 @@ public final class CollisionResolver {
         for (int j = loCol; j <= hiCol; j++)
             for (int i = loRow; i <= hiRow; i++)
                 if (blocks(collision.get(j, i))) push(body, j * tile, i * tile - collidableRaise, tile, tile);
+        for (int j = loCol; j <= hiCol; j++)
+            for (int i = loRow; i <= hiRow; i++)
+                if (layers.blocksAt(j, i)) push(body, j * tile, i * tile, tile, tile);
         for (int j = loCol; j <= hiCol; j++)
             for (int i = loRow; i <= hiRow; i++) {
                 PlantedCrop crop = crops.at(j, i);

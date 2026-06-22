@@ -8,6 +8,7 @@ import crops.CropGeometry;
 import crops.CropType;
 import org.junit.jupiter.api.Test;
 import world.ChunkedTileLayer;
+import world.layer.LayerStack;
 
 /**
  * Exercises the spatial-query windowing in {@link CollisionResolver#collidesAt} and {@link
@@ -20,7 +21,7 @@ class CollisionResolverTest {
     private static final float ERR = 0.45f;
 
     private CollisionResolver resolver(ChunkedTileLayer collision, CropField crops) {
-        return new CollisionResolver(collision, crops, new CropGeometry(TILE), TILE, ERR);
+        return new CollisionResolver(collision, crops, new CropGeometry(TILE), TILE, ERR, new LayerStack());
     }
 
     private ChunkedTileLayer emptyGrid() { return new ChunkedTileLayer(5, 5, TILE); }

@@ -48,6 +48,8 @@ import world.ChunkedTileLayer;
 import world.DualGridSoil;
 import world.ObjectLayer;
 import world.PlacedObject;
+import world.layer.CornerAutotileLayer;
+import world.layer.LayerStack;
 
 import static entities.PlayerAnimations.playerAnimationArrays;
 
@@ -97,6 +99,7 @@ public class PlayState extends GameState {
     private final TilePalette palette = new TilePalette(assets);
     private final ChunkedTileLayer decorationLayer;
     private final ObjectLayer objectLayer;
+    private final LayerStack layerStack; // editor-authored stackable layers (sand, sand-water, fence, props, ...)
     private final CollisionResolver collisionResolver;
     private final PlayerCharacter player; // position, facing, tool, walk animation; also the collision Body
     private final int[] inventoryItems, inventoryAmounts; // live refs into the Inventory built at load
@@ -196,6 +199,7 @@ public class PlayState extends GameState {
         // Props load with null regions (the save layer is GL-free); rebuild each from its sheet now.
         for (PlacedObject o : objectLayer.all())
             o.setRegion(TextureSlicer.subRegion(assets.get(o.sheetPath), o.srcX, o.srcY, o.srcW, o.srcH));
+        layerStack = buildLayerStack(collisionLayer.cols(), collisionLayer.rows());
         inventoryItems = loaded.inventoryItems();     // shared refs: mutating these mutates the loaded inventory
         inventoryAmounts = loaded.inventoryAmounts();
         selectedSlot = loaded.selectedSlot();
@@ -230,13 +234,13 @@ public class PlayState extends GameState {
         inventoryHud = new InventoryHud(inventoryBarTexture, toggleTexture, fontTexture, itemRegistry, assets);
         inventoryInteraction = new InventoryInteraction(inventoryItems, inventoryAmounts, inventoryHud, input);
         cropField = new CropField(collisionLayer.cols(), collisionLayer.rows());
-        collisionResolver = new CollisionResolver(collisionLayer, cropField, cropGeometry, Config.TILE, COLLISION_ERR);
+        collisionResolver = new CollisionResolver(collisionLayer, cropField, cropGeometry, Config.TILE, COLLISION_ERR, layerStack);
         worldPersistence = new WorldPersistence(collisionLayer, grassLayer, decorationLayer, soil, cropField,
                 objectLayer, player, inventoryItems, inventoryAmounts, cropRegistry, worldSeed);
         worldPersistence.restoreCrops(loaded.crops());
         worldRenderer = new WorldRenderer(grassLayer, soil, collisionLayer, cropField, cropGeometry, Config.TILE,
                 grassRegions, soilRegions, collisionRegions, wateredRegions, frameRegion,
-                decorationLayer, objectLayer, palette);
+                decorationLayer, objectLayer, palette, layerStack);
         farmInteraction = new FarmInteraction(soil, cropField, cropRegistry, itemRegistry, cropGeometry,
                 collisionResolver, gameCamera, player, inventoryItems, inventoryAmounts);
         syncSelectedTool(); // initial held tool reflects the selected hotbar slot
@@ -245,6 +249,18 @@ public class PlayState extends GameState {
     /** Load a classpath texture with Nearest filtering (crisp pixel art, no color softening). */
     private Texture loadTexture(String path) {
         return assets.get(path); // lazy load + cache + dispose all handled by Assets
+    }
+
+    /** Build the editor-authored layer stack. These sit on top of the built-in grass/soil/bush layers and are
+     *  painted via the editor's Layers menu. Sand and sand-water share the soil corner dual-grid (their sheets
+     *  use the same layout); fence + props are added in their own slices. */
+    private LayerStack buildLayerStack(int cols, int rows) {
+        LayerStack stack = new LayerStack();
+        TextureRegion[] sand = TextureSlicer.slice(loadTexture("tilesets/sand.png"), 6, 3);
+        TextureRegion[] sandWater = TextureSlicer.slice(loadTexture("tilesets/sandwater.png"), 6, 3);
+        stack.add(new CornerAutotileLayer("Sand", new ChunkedTileLayer(cols, rows, Config.TILE), sand, -1));
+        stack.add(new CornerAutotileLayer("Sand water", new ChunkedTileLayer(cols, rows, Config.TILE), sandWater, -1));
+        return stack;
     }
 
     /** Turn a data {@link ToolActionBlueprint} into a live {@link ToolAction}, slicing from the named sheet
@@ -336,7 +352,8 @@ public class PlayState extends GameState {
         // update is skipped this frame; while the editor is on top, PlayState.update won't run at all.
         if (Config.EDITOR_ENABLED && input.isJustPressed(InputAction.TOGGLE_EDITOR)) {
             stateManager.push(new EditorState(stateManager, worldRenderer, assets, palette,
-                    decorationLayer, soil, collisionLayer, objectLayer, player.centerX(), player.centerY()));
+                    decorationLayer, soil, collisionLayer, objectLayer, layerStack,
+                    player.centerX(), player.centerY()));
             return;
         }
         autosave(delta); // periodic save so a crash/SIGKILL doesn't lose progress (exit-only save isn't enough)
