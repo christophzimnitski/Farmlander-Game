@@ -94,6 +94,8 @@ public final class EditorState extends GameState {
     private int bushBase;                              // selected bush type's collision band (0/18/36)
     private int layerBrush = 0;                        // brush for the active stack layer: fence gate id / props tile / 0 = auto
     private int brushTileId = TilePalette.EMPTY;     // the tile the picker last selected (TILE/BUSH preview)
+    private boolean consumeClick;                      // a UI click (picker/panel) holds the LEFT button down for
+                                                       // several frames; suppress map painting until it's released
     private float camX, camY;                         // world-space camera centre
     private float zoom = 2f;                           // start zoomed out a little for an overview
 
@@ -181,10 +183,12 @@ public final class EditorState extends GameState {
 
         if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
             if (picker.isOpen()) {
+                consumeClick = true; // a click on the modal picker selects a tile; it must not also paint underneath
                 int id = picker.handleClick(mx, my, w, h);
                 if (id != TilePalette.EMPTY) applyPickedTile(id);
             } else {
                 EditorPanel.Hit hit = panel.handleClick(mx, my, h, menu.size());
+                if (hit.kind != EditorPanel.HitKind.NONE) consumeClick = true; // hit a row/eye/tab, not the map
                 switch (hit.kind) {
                     case LAYER -> { activeMenuRow = hit.index; pendingLayer = null; menu.get(hit.index).activate.run(); }
                     case EYE -> menu.get(hit.index).toggleVisible.run();
@@ -192,9 +196,12 @@ public final class EditorState extends GameState {
                 }
             }
         }
+        // A UI click keeps LEFT held for several frames; don't start painting until it's released (the picker may
+        // have closed / the panel collapsed, so the cursor is no longer "over UI" but the same press is ongoing).
+        if (!Gdx.input.isButtonPressed(Input.Buttons.LEFT)) consumeClick = false;
         if (!overUi) {
             // Left paints the active brush continuously while held; right-click erases the active layer only.
-            if (Gdx.input.isButtonPressed(Input.Buttons.LEFT)) paintAt(mx, my);
+            if (Gdx.input.isButtonPressed(Input.Buttons.LEFT) && !consumeClick) paintAt(mx, my);
             if (Gdx.input.isButtonPressed(Input.Buttons.RIGHT)) eraseAt(mx, my);
         }
 
