@@ -89,7 +89,7 @@ public final class WorldRenderer {
         batch.begin();
         if (visibility.grass) drawArray(batch, grass, grassRegions, view);
         if (visibility.soil) { drawSoil(batch, view); drawWateredBlobs(batch, view); }
-        if (visibility.decoration) drawDecoration(batch, view); // editor-placed tiles, flat above the ground
+        drawDecoration(batch, view); // editor-placed tiles, flat above the ground (per-sheet visibility inside)
         layerStack.drawGround(batch, view, tile); // editor ground layers (sand / sand-water)
         drawHighlight(batch, highlightCol, highlightRow);
         drawCrops(batch, feetY, false, view);     // crops rooted above the player -> behind
@@ -117,7 +117,7 @@ public final class WorldRenderer {
         batch.begin();
         if (visibility.grass) drawArray(batch, grass, grassRegions, view);
         if (visibility.soil) { drawSoil(batch, view); drawWateredBlobs(batch, view); }
-        if (visibility.decoration) drawDecoration(batch, view);
+        drawDecoration(batch, view); // per-sheet visibility handled inside
         layerStack.drawGround(batch, view, tile);
         if (visibility.bushes) drawCollision(batch, feetY, false, view);
         drawObjects(batch, feetY, false, view);
@@ -147,7 +147,8 @@ public final class WorldRenderer {
     }
 
     /** Editor-placed decoration tiles: cell-aligned, resolved through the {@link TilePalette} so any sheet's
-     *  tiles can sit in one grid. Drawn flat (no depth split) above the ground and below crops/bushes/props. */
+     *  tiles can sit in one grid. Drawn flat (no depth split) above the ground and below crops/bushes/props.
+     *  Each source sheet (rocks/ore, reeds, …) hides independently via {@link LayerVisibility}. */
     private void drawDecoration(SpriteBatch batch, Rectangle view) {
         int loCol = minCol(view.x, decoration.cols()), hiCol = maxCol(view.x + view.width, decoration.cols());
         int loRow = minCol(view.y, decoration.rows()), hiRow = maxCol(view.y + view.height, decoration.rows());
@@ -155,6 +156,7 @@ public final class WorldRenderer {
             for (int i = loRow; i <= hiRow; i++) {
                 int id = decoration.get(j, i);
                 if (id == TilePalette.EMPTY) continue;
+                if (!visibility.isDecorationSheetVisible(TilePalette.sheetIndexOf(id))) continue;
                 TextureRegion r = palette.region(id);
                 if (r != null) batch.draw(r, j * tile, i * tile, tile, tile);
             }

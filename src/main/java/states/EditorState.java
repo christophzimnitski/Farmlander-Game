@@ -147,10 +147,10 @@ public final class EditorState extends GameState {
         picker = new SheetPicker(assets, font, whiteRegion);
         buildMenu();
         applyCamera();
-        // Mouse-wheel zoom needs the scroll callback (polling can't read it): scroll down zooms in, up zooms out.
+        // Mouse-wheel zoom needs the scroll callback (polling can't read it): scroll up zooms in, down zooms out.
         Gdx.input.setInputProcessor(new InputAdapter() {
             @Override public boolean scrolled(float amountX, float amountY) {
-                zoom = clampZoom(zoom * (amountY > 0 ? 1f / SCROLL_STEP : SCROLL_STEP));
+                zoom = clampZoom(zoom * (amountY > 0 ? SCROLL_STEP : 1f / SCROLL_STEP));
                 return true;
             }
         });
@@ -168,19 +168,31 @@ public final class EditorState extends GameState {
                 () -> visibility.grass, () -> visibility.grass = !visibility.grass));
         menu.add(new MenuEntry("Soil", () -> { mode = BrushMode.SOIL; clearStamp(); },
                 () -> visibility.soil, () -> visibility.soil = !visibility.soil));
+        // The fence layers (different styles) form one network: they connect across layers and share a single
+        // eye, so toggling either hides/shows them all together.
+        List<MapLayer> fences = new ArrayList<>();
+        for (MapLayer layer : layerStack.all()) if (layer.kind() == MapLayer.Kind.FENCE) fences.add(layer);
+        BooleanSupplier fencesVisible = () -> !fences.isEmpty() && fences.get(0).isVisible();
+        Runnable toggleFences = () -> { boolean v = !fences.get(0).isVisible(); for (MapLayer f : fences) f.setVisible(v); };
         for (MapLayer layer : layerStack.all()) {
-            menu.add(new MenuEntry(layer.name(), () -> activateStackLayer(layer),
-                    layer::isVisible, () -> layer.setVisible(!layer.isVisible())));
+            boolean isFence = layer.kind() == MapLayer.Kind.FENCE;
+            BooleanSupplier vis = isFence ? fencesVisible : layer::isVisible;
+            Runnable toggle = isFence ? toggleFences : () -> layer.setVisible(!layer.isVisible());
+            menu.add(new MenuEntry(layer.name(), () -> activateStackLayer(layer), vis, toggle));
         }
         BooleanSupplier bushesVisible = () -> visibility.bushes;
         Runnable toggleBushes = () -> visibility.bushes = !visibility.bushes;
         menu.add(new MenuEntry("Tall grass", () -> selectBush(bushSheet("tallgrass"), 0), bushesVisible, toggleBushes));
         menu.add(new MenuEntry("Wheat", () -> selectBush(bushSheet("wheat"), BushAutotiler.SPAN), bushesVisible, toggleBushes));
         menu.add(new MenuEntry("Young wheat", () -> selectBush(bushSheet("youngwheat"), 2 * BushAutotiler.SPAN), bushesVisible, toggleBushes));
-        BooleanSupplier decoVisible = () -> visibility.decoration;
-        Runnable toggleDeco = () -> visibility.decoration = !visibility.decoration;
-        menu.add(new MenuEntry("Rocks & ore", () -> picker.open(TilePalette.indexOf("tilesets/ore.png")), decoVisible, toggleDeco));
-        menu.add(new MenuEntry("Reeds", () -> picker.open(TilePalette.indexOf("tilesets/reed.png")), decoVisible, toggleDeco));
+        // Rocks/ore and reeds share one decoration grid but hide independently — each gets its own eye keyed by
+        // its TilePalette sheet, so toggling one no longer blanks the other.
+        int oreSheet = TilePalette.indexOf("tilesets/ore.png");
+        int reedSheet = TilePalette.indexOf("tilesets/reed.png");
+        menu.add(new MenuEntry("Rocks & ore", () -> picker.open(oreSheet),
+                () -> visibility.isDecorationSheetVisible(oreSheet), () -> visibility.toggleDecorationSheet(oreSheet)));
+        menu.add(new MenuEntry("Reeds", () -> picker.open(reedSheet),
+                () -> visibility.isDecorationSheetVisible(reedSheet), () -> visibility.toggleDecorationSheet(reedSheet)));
     }
 
     private static int bushSheet(String name) { return TilePalette.indexOf("tilesets/" + name + ".png"); }
