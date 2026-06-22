@@ -42,6 +42,9 @@ public final class WorldSave {
     public int[][] decoration;
     public ObjectSave[] objects;
 
+    // Editor layer stack (save v4+): sand / sand-water / fence / props / user-added layers. Null on older saves.
+    public LayerSave[] layers;
+
     public WorldSave() {
     }
 }

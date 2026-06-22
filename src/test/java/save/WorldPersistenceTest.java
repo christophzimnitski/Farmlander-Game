@@ -11,6 +11,7 @@ import world.ChunkedTileLayer;
 import world.DualGridSoil;
 import world.ObjectLayer;
 import world.PlacedObject;
+import world.layer.LayerStack;
 
 /**
  * Pins the property that makes the background autosave safe: {@link WorldPersistence#snapshot} returns a
@@ -33,7 +34,7 @@ class WorldPersistenceTest {
         PlayerCharacter player =
                 new PlayerCharacter(100f, 100f, 34, new int[]{32, 33, 34, 35}, new TextureRegion[36][9]);
         // cropRegistry is only used by restoreCrops, not by snapshot, so null is fine here.
-        return new WorldPersistence(collision, grass, decoration, soil, field, objects, player,
+        return new WorldPersistence(collision, grass, decoration, soil, field, objects, new LayerStack(), player,
                 items, amounts, null, 42L);
     }
 

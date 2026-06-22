@@ -33,6 +33,7 @@ import render.GameCamera;
 import render.TextureSlicer;
 import render.WorldRenderer;
 import save.FarmWorldLoader;
+import save.LayerSave;
 import save.SaveManager;
 import save.WorldPersistence;
 import save.WorldSave;
@@ -50,6 +51,7 @@ import world.ObjectLayer;
 import world.PlacedObject;
 import world.layer.CornerAutotileLayer;
 import world.layer.LayerStack;
+import world.layer.MapLayer;
 
 import static entities.PlayerAnimations.playerAnimationArrays;
 
@@ -200,6 +202,7 @@ public class PlayState extends GameState {
         for (PlacedObject o : objectLayer.all())
             o.setRegion(TextureSlicer.subRegion(assets.get(o.sheetPath), o.srcX, o.srcY, o.srcW, o.srcH));
         layerStack = buildLayerStack(collisionLayer.cols(), collisionLayer.rows());
+        applySavedLayers(loaded.layers()); // restore editor layer grids from the save (matched by name)
         inventoryItems = loaded.inventoryItems();     // shared refs: mutating these mutates the loaded inventory
         inventoryAmounts = loaded.inventoryAmounts();
         selectedSlot = loaded.selectedSlot();
@@ -236,7 +239,7 @@ public class PlayState extends GameState {
         cropField = new CropField(collisionLayer.cols(), collisionLayer.rows());
         collisionResolver = new CollisionResolver(collisionLayer, cropField, cropGeometry, Config.TILE, COLLISION_ERR, layerStack);
         worldPersistence = new WorldPersistence(collisionLayer, grassLayer, decorationLayer, soil, cropField,
-                objectLayer, player, inventoryItems, inventoryAmounts, cropRegistry, worldSeed);
+                objectLayer, layerStack, player, inventoryItems, inventoryAmounts, cropRegistry, worldSeed);
         worldPersistence.restoreCrops(loaded.crops());
         worldRenderer = new WorldRenderer(grassLayer, soil, collisionLayer, cropField, cropGeometry, Config.TILE,
                 grassRegions, soilRegions, collisionRegions, wateredRegions, frameRegion,
@@ -261,6 +264,24 @@ public class PlayState extends GameState {
         stack.add(new CornerAutotileLayer("Sand", new ChunkedTileLayer(cols, rows, Config.TILE), sand, -1));
         stack.add(new CornerAutotileLayer("Sand water", new ChunkedTileLayer(cols, rows, Config.TILE), sandWater, -1));
         return stack;
+    }
+
+    /** Restore saved editor-layer grids into the freshly-built stack, matched by layer name. Unknown saved
+     *  layers are ignored (the fixed set is rebuilt by buildLayerStack); a missing one stays empty. */
+    private void applySavedLayers(LayerSave[] saved) {
+        if (saved == null) return;
+        for (LayerSave s : saved) {
+            if (s.grid == null) continue;
+            for (int i = 0; i < layerStack.size(); i++) {
+                MapLayer layer = layerStack.get(i);
+                if (!layer.name().equals(s.name)) continue;
+                ChunkedTileLayer g = layer.grid();
+                for (int c = 0; c < s.grid.length && c < g.cols(); c++)
+                    for (int r = 0; r < s.grid[c].length && r < g.rows(); r++)
+                        if (s.grid[c][r] != 0) g.set(c, r, s.grid[c][r]);
+                break;
+            }
+        }
     }
 
     /** Turn a data {@link ToolActionBlueprint} into a live {@link ToolAction}, slicing from the named sheet

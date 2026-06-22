@@ -152,6 +152,30 @@ class SaveRoundTripTest {
     }
 
     @Test
+    void editorLayersSurviveRoundTrip() throws IOException {
+        WorldSave in = new WorldSave();
+        in.walkActions = new int[]{32, 33, 34, 35};
+        in.collision = new int[][]{{0}};
+        in.planting = new int[][]{{0}};
+        in.grass = new int[][]{{0}};
+        in.layers = new LayerSave[]{
+                new LayerSave("Sand", 1, -1, false, false, new int[][]{{0, 1}, {1, 0}}),
+                new LayerSave("Fence", 2, 5, true, true, new int[][]{{3, 0}, {0, 7}}),
+        };
+
+        WorldSave out = roundTrip(in);
+
+        assertEquals(2, out.layers.length);
+        LayerSave fence = out.layers[1];
+        assertEquals("Fence", fence.name);
+        assertEquals(2, fence.kind);
+        assertEquals(5, fence.sheetIndex);
+        assertEquals(true, fence.solid);
+        assertEquals(true, fence.upright);
+        assertArrayEquals(new int[][]{{3, 0}, {0, 7}}, fence.grid);
+    }
+
+    @Test
     void nullDecorationAndObjectsReadBack() throws IOException {
         WorldSave in = new WorldSave();
         in.walkActions = new int[]{32, 33, 34, 35};

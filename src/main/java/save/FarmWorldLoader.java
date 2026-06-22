@@ -60,12 +60,13 @@ public final class FarmWorldLoader {
         inv.moveSelection(savedSlot - inv.getSelectedSlot());
         int selectedSlot = inv.getSelectedSlot();
 
+        LayerSave[] layers = ws == null ? null : ws.layers;
         if (ws != null) {
-            return new LoadedWorld(collision, grass, decoration, soil, objects, seed, items, amounts, selectedSlot,
-                    ws.playerX, ws.playerY, ws.currentAnimation, ws.walkActions, ws.crops);
+            return new LoadedWorld(collision, grass, decoration, soil, objects, layers, seed, items, amounts,
+                    selectedSlot, ws.playerX, ws.playerY, ws.currentAnimation, ws.walkActions, ws.crops);
         }
-        return new LoadedWorld(collision, grass, decoration, soil, objects, seed, items, amounts, selectedSlot,
-                DEFAULT_SPAWN_X, DEFAULT_SPAWN_Y, DEFAULT_ANIMATION, new int[]{32, 33, 34, 35}, null);
+        return new LoadedWorld(collision, grass, decoration, soil, objects, layers, seed, items, amounts,
+                selectedSlot, DEFAULT_SPAWN_X, DEFAULT_SPAWN_Y, DEFAULT_ANIMATION, new int[]{32, 33, 34, 35}, null);
     }
 
     /** Rebuild the object layer from saved records. The drawable {@code TextureRegion} is GL state, so it's
@@ -108,6 +109,7 @@ public final class FarmWorldLoader {
             ChunkedTileLayer decoration,
             DualGridSoil soil,
             ObjectLayer objects,
+            LayerSave[] layers,
             long worldSeed,
             int[] inventoryItems,
             int[] inventoryAmounts,

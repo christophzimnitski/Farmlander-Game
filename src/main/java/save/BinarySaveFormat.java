@@ -26,7 +26,7 @@ import java.io.OutputStream;
 public final class BinarySaveFormat implements SaveFormat {
     /** 'F','L','N','D' — distinguishes our stream from a Java-serialization stream (which starts 0xACED). */
     public static final int MAGIC = 0x464C4E44;
-    public static final int VERSION = 3;
+    public static final int VERSION = 4;
 
     @Override
     public void write(WorldSave d, OutputStream rawOut) throws IOException {
@@ -72,6 +72,18 @@ public final class BinarySaveFormat implements SaveFormat {
             out.writeFloat(o.worldY);
             out.writeFloat(o.drawW);
             out.writeFloat(o.drawH);
+        }
+
+        // v4: the editor layer stack (sand/sand-water/fence/props/user layers).
+        LayerSave[] layers = d.layers == null ? new LayerSave[0] : d.layers;
+        out.writeInt(layers.length);
+        for (LayerSave l : layers) {
+            out.writeUTF(l.name);
+            out.writeInt(l.kind);
+            out.writeInt(l.sheetIndex);
+            out.writeBoolean(l.solid);
+            out.writeBoolean(l.upright);
+            GridCodec.writeChunked(out, l.grid);
         }
         out.flush();
     }
@@ -123,6 +135,21 @@ public final class BinarySaveFormat implements SaveFormat {
                         in.readFloat(), in.readFloat(), in.readFloat(), in.readFloat());
             }
             d.objects = objects;
+        }
+        if (version >= 4) { // editor layer stack
+            int layerCount = in.readInt();
+            LayerSave[] layers = new LayerSave[layerCount];
+            for (int i = 0; i < layerCount; i++) {
+                LayerSave l = new LayerSave();
+                l.name = in.readUTF();
+                l.kind = in.readInt();
+                l.sheetIndex = in.readInt();
+                l.solid = in.readBoolean();
+                l.upright = in.readBoolean();
+                l.grid = GridCodec.readChunked(in);
+                layers[i] = l;
+            }
+            d.layers = layers;
         }
         return d;
     }

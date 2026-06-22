@@ -10,6 +10,8 @@ import world.ChunkedTileLayer;
 import world.DualGridSoil;
 import world.ObjectLayer;
 import world.PlacedObject;
+import world.layer.LayerStack;
+import world.layer.MapLayer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +35,7 @@ public final class WorldPersistence {
     private final DualGridSoil soil;
     private final CropField cropField;
     private final ObjectLayer objects;
+    private final LayerStack layerStack;
     private final PlayerCharacter player;
     private final int[] inventoryItems, inventoryAmounts; // shared live refs — mutated in place during play
     private final CropRegistry cropRegistry;
@@ -47,7 +50,7 @@ public final class WorldPersistence {
     });
 
     public WorldPersistence(ChunkedTileLayer collision, ChunkedTileLayer grass, ChunkedTileLayer decoration,
-                            DualGridSoil soil, CropField cropField, ObjectLayer objects,
+                            DualGridSoil soil, CropField cropField, ObjectLayer objects, LayerStack layerStack,
                             PlayerCharacter player, int[] inventoryItems, int[] inventoryAmounts,
                             CropRegistry cropRegistry, long worldSeed) {
         this.collision = collision;
@@ -56,6 +59,7 @@ public final class WorldPersistence {
         this.soil = soil;
         this.cropField = cropField;
         this.objects = objects;
+        this.layerStack = layerStack;
         this.player = player;
         this.inventoryItems = inventoryItems;
         this.inventoryAmounts = inventoryAmounts;
@@ -105,6 +109,16 @@ public final class WorldPersistence {
                     o.worldX, o.worldY, o.drawW, o.drawH);
         }
         ws.objects = objectSaves;
+
+        // Editor layer stack -> plain LayerSave records (grids detached via toDense; regions rebuilt on load).
+        List<MapLayer> ls = layerStack.all();
+        LayerSave[] layerSaves = new LayerSave[ls.size()];
+        for (int i = 0; i < ls.size(); i++) {
+            MapLayer l = ls.get(i);
+            layerSaves[i] = new LayerSave(l.name(), l.kind().ordinal(), l.sheetIndex(),
+                    l.isSolid(), l.isUpright(), l.grid().toDense());
+        }
+        ws.layers = layerSaves;
 
         // Snapshot the crop grid as plain CropSave records (no PlantedCrop/CropType, which hold textures).
         List<CropSave> crops = new ArrayList<>();
