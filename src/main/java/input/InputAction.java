@@ -19,5 +19,6 @@ public enum InputAction {
     USE_TOOL,        // trigger the held tool's action (e.g. till)
     HARVEST,         // harvest the crop under the cursor
     QUIT,            // exit the game
-    TOGGLE_EDITOR    // open/close the map editor (gated by Config.EDITOR_ENABLED)
+    TOGGLE_EDITOR,   // open/close the map editor (gated by Config.EDITOR_ENABLED)
+    TOGGLE_HITBOXES  // dev-only: draw collision hitboxes over the world (see core.Debug)
 }

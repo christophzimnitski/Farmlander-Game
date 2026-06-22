@@ -1,5 +1,6 @@
 package physics;
 
+import com.badlogic.gdx.math.Rectangle;
 import crops.CropField;
 import crops.CropGeometry;
 import crops.PlantedCrop;
@@ -84,6 +85,29 @@ public final class CollisionResolver {
                 if (crop != null && !crop.harvested)
                     push(body, cropGeometry.footprintX(j), cropGeometry.footprintY(i),
                          cropGeometry.footprintWidth, cropGeometry.footprintHeight);
+            }
+    }
+
+    /** Receives one blocking box (world coords) from {@link #forEachSolidBox}. */
+    public interface SolidBoxConsumer { void box(float x, float y, float w, float h); }
+
+    /** Visit every blocking box whose cell lies within {@code view} (world-space rectangle): collision-layer
+     *  solids (raised by {@code tile/8} to their visual base), solid editor-stack cells (fences), and
+     *  non-harvested crop footprints. These are the exact boxes {@link #collidesAt}/{@link #resolve} test, so
+     *  a debug overlay can draw precisely what blocks the player. */
+    public void forEachSolidBox(Rectangle view, SolidBoxConsumer sink) {
+        int loCol = clampCol((int) Math.floor(view.x / tile));
+        int hiCol = clampCol((int) Math.ceil((view.x + view.width) / tile));
+        int loRow = clampRow((int) Math.floor(view.y / tile));
+        int hiRow = clampRow((int) Math.ceil((view.y + view.height) / tile));
+        for (int j = loCol; j <= hiCol; j++)
+            for (int i = loRow; i <= hiRow; i++) {
+                if (blocks(collision.get(j, i))) sink.box(j * tile, i * tile - collidableRaise, tile, tile);
+                if (layers.blocksAt(j, i)) sink.box(j * tile, i * tile, tile, tile);
+                PlantedCrop crop = crops.at(j, i);
+                if (crop != null && !crop.harvested)
+                    sink.box(cropGeometry.footprintX(j), cropGeometry.footprintY(i),
+                             cropGeometry.footprintWidth, cropGeometry.footprintHeight);
             }
     }
 

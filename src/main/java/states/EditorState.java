@@ -9,6 +9,7 @@ import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import core.Assets;
+import core.Debug;
 import core.GameState;
 import core.GameStateManager;
 import editor.EditorPanel;
@@ -16,6 +17,8 @@ import editor.SheetPicker;
 import editor.TilePalette;
 import input.InputAction;
 import input.InputBindings;
+import physics.CollisionResolver;
+import render.DebugOverlay;
 import render.GameCamera;
 import render.WorldRenderer;
 import ui.PixelFont;
@@ -83,6 +86,8 @@ public final class EditorState extends GameState {
     private final ChunkedTileLayer collision;
     private final LayerStack layerStack;
     private final LayerVisibility visibility;
+    private final CollisionResolver collisionResolver; // shared with PlayState; only for the F2 hitbox overlay
+    private final DebugOverlay debugOverlay = new DebugOverlay(); // F2 hitbox overlay (dev-only)
 
     private final List<MenuEntry> menu = new ArrayList<>();
     private int activeMenuRow = -1;
@@ -104,7 +109,7 @@ public final class EditorState extends GameState {
     public EditorState(GameStateManager stateManager, WorldRenderer worldRenderer, Assets assets,
                        TilePalette palette, ChunkedTileLayer decoration, DualGridSoil soil,
                        ChunkedTileLayer collision, LayerStack layerStack, LayerVisibility visibility,
-                       float startX, float startY) {
+                       CollisionResolver collisionResolver, float startX, float startY) {
         super(stateManager);
         this.worldRenderer = worldRenderer;
         this.assets = assets;
@@ -114,6 +119,7 @@ public final class EditorState extends GameState {
         this.collision = collision;
         this.layerStack = layerStack;
         this.visibility = visibility;
+        this.collisionResolver = collisionResolver;
         this.tile = decoration.tileSize();
         this.bushAutotiler = new BushAutotiler(collision);
         this.camX = startX;
@@ -178,6 +184,7 @@ public final class EditorState extends GameState {
             stateManager.pop();
             return;
         }
+        if (input.isJustPressed(InputAction.TOGGLE_HITBOXES)) Debug.showHitboxes = !Debug.showHitboxes;
 
         int mx = Gdx.input.getX(), my = Gdx.input.getY();
         int w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
@@ -348,6 +355,8 @@ public final class EditorState extends GameState {
     public void render(SpriteBatch batch) {
         float w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
         worldRenderer.renderForEditor(batch, camera);
+        // Dev hitbox overlay (F2): same shared resolver as play (no player here); thickness tracks zoom.
+        if (Debug.showHitboxes) debugOverlay.render(batch, camera, collisionResolver, null, 2f * zoom);
         if (!picker.isOpen()) renderHover(batch, h);
         renderPanel(batch, w, h);
         if (!picker.isOpen()) renderBrushSwatch(batch, w);
@@ -455,5 +464,6 @@ public final class EditorState extends GameState {
     public void dispose() {
         Gdx.input.setInputProcessor(null); // PlayState polls input; don't leave the editor's scroll handler set
         white.dispose();
+        debugOverlay.dispose();
     }
 }

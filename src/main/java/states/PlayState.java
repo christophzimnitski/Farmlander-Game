@@ -6,6 +6,7 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import core.Assets;
 import core.Config;
+import core.Debug;
 import core.GameState;
 import core.GameStateManager;
 import core.Log;
@@ -29,6 +30,7 @@ import items.data.DefaultItemDataSource;
 import items.data.ItemDataSource;
 import items.data.JsonItemDataSource;
 import physics.CollisionResolver;
+import render.DebugOverlay;
 import render.GameCamera;
 import render.TextureSlicer;
 import render.WorldRenderer;
@@ -90,6 +92,7 @@ public class PlayState extends GameState {
     private final InventoryHud inventoryHud; // screen-space inventory bar (owns its regions + icon cache)
     private final InventoryInteraction inventoryInteraction; // mouse drag/move/select while the popup is open
     private final WorldRenderer worldRenderer; // grass/soil/crops/bushes/player depth-sorted draws
+    private final DebugOverlay debugOverlay = new DebugOverlay(); // F2 hitbox overlay (dev-only)
 
     // Every classpath texture is owned by one lazy cache (load-on-first-use + dispose-all).
     private final Assets assets = new Assets();
@@ -384,11 +387,14 @@ public class PlayState extends GameState {
     @Override
     public void update(float delta) {
         if (input.isJustPressed(InputAction.QUIT)) Gdx.app.exit();
+        // F2 toggles the dev hitbox overlay. Polled before any early-return so it works while a tool swings or
+        // the inventory is open.
+        if (input.isJustPressed(InputAction.TOGGLE_HITBOXES)) Debug.showHitboxes = !Debug.showHitboxes;
         // F1 opens the map editor over this state (when enabled). Push and return so the rest of the play
         // update is skipped this frame; while the editor is on top, PlayState.update won't run at all.
         if (Config.EDITOR_ENABLED && input.isJustPressed(InputAction.TOGGLE_EDITOR)) {
             stateManager.push(new EditorState(stateManager, worldRenderer, assets, palette,
-                    decorationLayer, soil, collisionLayer, layerStack, layerVisibility,
+                    decorationLayer, soil, collisionLayer, layerStack, layerVisibility, collisionResolver,
                     player.centerX(), player.centerY()));
             return;
         }
@@ -566,6 +572,8 @@ public class PlayState extends GameState {
             highlightRow = farmInteraction.targetRow(dir);
         }
         worldRenderer.render(batch, gameCamera, player, toolActionSystem, highlightCol, highlightRow);
+        // Dev hitbox overlay (F2): drawn over the world, under the HUD. 3px world units at zoom 1.
+        if (Debug.showHitboxes) debugOverlay.render(batch, gameCamera, collisionResolver, player, 3f);
         inventoryHud.render(batch, gameCamera.hudCombined(), inventoryItems, inventoryAmounts, selectedSlot,
                             inventoryOpen, inventoryInteraction.draggedItemId(), inventoryInteraction.draggedAmount(),
                             inventoryInteraction.draggedSourceSlot(), inventoryInteraction.hoverSlot(),
@@ -585,5 +593,6 @@ public class PlayState extends GameState {
         catch (Exception e) { Log.error("PlayState", "save on exit failed", e); }
         assets.dispose();        // frees every classpath texture (tilesets, player sheets, UI, crops, icons)
         inventoryHud.dispose();  // frees the procedurally-generated dim pixel
+        debugOverlay.dispose();  // frees the overlay's 1x1 white pixel
     }
 }
