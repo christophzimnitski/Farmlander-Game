@@ -7,33 +7,37 @@ import com.badlogic.gdx.math.Matrix4;
 import ui.PixelFont;
 
 /**
- * The editor's retractable side panel (left edge), drawn in screen space. It lists every paintable tileset
- * (from {@link TilePalette}); clicking a row picks that sheet, which the editor opens in a tile-picker popup.
- * A little tab on the panel's outer edge hides/shows the whole panel so it's out of the way while you place.
+ * The editor's retractable side panel (left edge): the **Layers** menu. It lists the map's layers (built-in
+ * grass/soil/bushes plus the editor stack — sand, sand-water, fence, props, and any added), highlights the
+ * active one you're painting into, shows a visibility eye for the layers that support hiding, and has an
+ * "Add layer" row. A little tab on the outer edge hides/shows the whole panel.
  *
  * <p>Hand-rolled to match the rest of the game's UI (per the project's owned-tech preference): filled quads
- * from a 1×1 white texture and the shared {@link PixelFont}, no Scene2D. Coordinates are the Y-down HUD
- * space (origin top-left), the same convention the inventory HUD uses, so screen-pixel mouse positions index
- * it directly. The font and white pixel are owned by {@code EditorState} and shared with the picker.
+ * from a 1×1 white texture and the shared {@link PixelFont}, no Scene2D. Pure presentation — the editor owns
+ * the layer model and passes the rows in; the panel reports what a click hit. Y-down HUD space, so screen
+ * pixels index it directly.
  */
 public final class EditorPanel {
     private static final float PANEL_W = 250f;
     private static final float TAB_W = 26f, TAB_H = 74f;
-    private static final float TITLE_H = 42f;     // top title bar
-    private static final float HEADER_H = 30f;    // "TILESETS" section header
+    private static final float TITLE_H = 42f;
     private static final float ROW_H = 28f;
     private static final float PAD = 12f;
     private static final float GLYPH = 15f, ADVANCE = 13f;
+    private static final float EYE = 18f;
 
-    /** What a click landed on, so the editor knows whether to consume it and what to do (open the picker for
-     *  a tileset, toggle the tab, or nothing). */
-    public enum Hit { NONE, PANEL, TAB, SHEET }
+    /** What a click hit. {@code index} is the layer row for LAYER/EYE. */
+    public enum HitKind { NONE, PANEL, TAB, LAYER, EYE, ADD }
+
+    public static final class Hit {
+        public final HitKind kind;
+        public final int index;
+        Hit(HitKind kind, int index) { this.kind = kind; this.index = index; }
+    }
 
     private final PixelFont font;
     private final TextureRegion whiteRegion;
-
     private boolean collapsed = false;
-    private int selectedSheet = -1; // last-clicked tileset row (index into TilePalette), -1 = none
 
     public EditorPanel(PixelFont font, TextureRegion whiteRegion) {
         this.font = font;
@@ -42,11 +46,9 @@ public final class EditorPanel {
 
     public boolean collapsed() { return collapsed; }
 
-    public int selectedSheet() { return selectedSheet; }
-
     private float panelX() { return collapsed ? -PANEL_W : 0f; }
 
-    private float rowsTop() { return TITLE_H + HEADER_H; }
+    private float rowY(int i) { return TITLE_H + i * ROW_H; }
 
     private void rect(SpriteBatch batch, float x, float y, float w, float h, float r, float g, float b, float a) {
         batch.setColor(r, g, b, a);
@@ -54,27 +56,32 @@ public final class EditorPanel {
         batch.setColor(Color.WHITE);
     }
 
-    /** Draw the panel + its tab in HUD space. */
-    public void render(SpriteBatch batch, Matrix4 hudCombined, float screenW, float screenH) {
+    /** Draw the panel. {@code eye[i]} = this layer has a visibility toggle; {@code visible[i]} = its state. */
+    public void render(SpriteBatch batch, Matrix4 hudCombined, float screenW, float screenH,
+                       String[] names, int active, boolean[] eye, boolean[] visible) {
         batch.setProjectionMatrix(hudCombined);
         batch.begin();
         float px = panelX();
         if (!collapsed) {
-            rect(batch, px, 0, PANEL_W, screenH, 0.12f, 0.13f, 0.17f, 0.96f);          // panel body
+            rect(batch, px, 0, PANEL_W, screenH, 0.12f, 0.13f, 0.17f, 0.96f);          // body
             rect(batch, px, 0, PANEL_W, TITLE_H, 0.20f, 0.30f, 0.42f, 1f);             // title bar
-            text(batch, "MAP EDITOR", px + PAD, PAD, 1f, 1f, 1f);
-            rect(batch, px, TITLE_H, PANEL_W, HEADER_H, 0.17f, 0.18f, 0.23f, 1f);      // section header
-            text(batch, "TILESETS", px + PAD, TITLE_H + 8f, 0.7f, 0.8f, 0.95f);
-            for (int i = 0; i < TilePalette.sheetCount(); i++) {
-                float ry = rowsTop() + i * ROW_H;
-                if (i == selectedSheet) rect(batch, px, ry, PANEL_W, ROW_H, 0.24f, 0.40f, 0.26f, 1f);
-                text(batch, TilePalette.sheet(i).name, px + PAD, ry + 7f, 0.9f, 0.92f, 0.9f);
+            text(batch, "LAYERS", px + PAD, PAD, 1f, 1f, 1f);
+            for (int i = 0; i < names.length; i++) {
+                float ry = rowY(i);
+                if (i == active) rect(batch, px, ry, PANEL_W, ROW_H, 0.24f, 0.40f, 0.26f, 1f);
+                text(batch, names[i], px + PAD, ry + 7f, 0.9f, 0.92f, 0.9f);
+                if (eye[i]) {
+                    float ex = px + PANEL_W - EYE - 8f, ey = ry + (ROW_H - EYE) / 2f;
+                    rect(batch, ex, ey, EYE, EYE, 0.05f, 0.05f, 0.07f, 1f);            // eye well
+                    if (visible[i]) rect(batch, ex + 4f, ey + 4f, EYE - 8f, EYE - 8f, 0.7f, 0.85f, 0.7f, 1f);
+                }
             }
-            // footer hint
+            float addY = rowY(names.length);
+            rect(batch, px, addY, PANEL_W, ROW_H, 0.16f, 0.22f, 0.30f, 1f);
+            text(batch, "+ ADD LAYER", px + PAD, addY + 7f, 0.8f, 0.9f, 0.7f);
             text(batch, "WASD PAN  - = ZOOM", px + PAD, screenH - 50f, 0.6f, 0.62f, 0.66f);
             text(batch, "F1 EXIT  RMB ERASE", px + PAD, screenH - 30f, 0.6f, 0.62f, 0.66f);
         }
-        // Tab (always visible) on the panel's outer edge, with a small "grip" of bars.
         float tabX = px + PANEL_W, tabY = screenH / 2f - TAB_H / 2f;
         rect(batch, tabX, tabY, TAB_W, TAB_H, 0.20f, 0.30f, 0.42f, 1f);
         for (int k = 0; k < 3; k++) {
@@ -89,32 +96,32 @@ public final class EditorPanel {
         batch.setColor(Color.WHITE);
     }
 
-    /**
-     * Resolve a screen-pixel click. Toggles the tab itself, records a clicked tileset row, and reports what
-     * was hit so the editor can both react (open the picker on {@link Hit#SHEET}) and know whether the click
-     * was consumed (anything but {@link Hit#NONE}) so it doesn't also paint the map.
-     */
-    public Hit handleClick(float x, float y, float screenH) {
+    /** Resolve a click. {@code eye[]} mirrors render so an eye hit is reported only where one is drawn. */
+    public Hit handleClick(float x, float y, float screenH, int rowCount, boolean[] eye) {
         float px = panelX();
         float tabX = px + PANEL_W, tabY = screenH / 2f - TAB_H / 2f;
         if (within(x, y, tabX, tabY, TAB_W, TAB_H)) {
             collapsed = !collapsed;
-            return Hit.TAB;
+            return new Hit(HitKind.TAB, -1);
         }
-        if (collapsed) return Hit.NONE; // body is off-screen; only the tab is live
-        if (!within(x, y, px, 0, PANEL_W, screenH)) return Hit.NONE;
-        for (int i = 0; i < TilePalette.sheetCount(); i++) {
-            float ry = rowsTop() + i * ROW_H;
+        if (collapsed) return new Hit(HitKind.NONE, -1);
+        if (!within(x, y, px, 0, PANEL_W, screenH)) return new Hit(HitKind.NONE, -1);
+        for (int i = 0; i < rowCount; i++) {
+            float ry = rowY(i);
             if (within(x, y, px, ry, PANEL_W, ROW_H)) {
-                selectedSheet = i;
-                return Hit.SHEET;
+                if (eye[i]) {
+                    float ex = px + PANEL_W - EYE - 8f, ey = ry + (ROW_H - EYE) / 2f;
+                    if (within(x, y, ex, ey, EYE, EYE)) return new Hit(HitKind.EYE, i);
+                }
+                return new Hit(HitKind.LAYER, i);
             }
         }
-        return Hit.PANEL; // clicked the panel chrome (title/header/footer) — consume, no-op
+        if (within(x, y, px, rowY(rowCount), PANEL_W, ROW_H)) return new Hit(HitKind.ADD, -1);
+        return new Hit(HitKind.PANEL, -1);
     }
 
-    /** Is a screen point over the panel chrome (body when open, plus the tab)? Lets the editor tell a UI
-     *  click from a map paint stroke without mutating any state (unlike {@link #handleClick}). */
+    /** Is a screen point over the panel chrome (body when open, plus the tab)? Lets the editor tell a UI click
+     *  from a map paint stroke without mutating state (unlike {@link #handleClick}). */
     public boolean contains(float x, float y, float screenH) {
         float px = panelX();
         float tabX = px + PANEL_W, tabY = screenH / 2f - TAB_H / 2f;

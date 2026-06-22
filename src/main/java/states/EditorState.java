@@ -16,6 +16,7 @@ import editor.TilePalette;
 import input.InputAction;
 import input.InputBindings;
 import render.GameCamera;
+import render.TextureSlicer;
 import render.WorldRenderer;
 import ui.PixelFont;
 import world.BushAutotiler;
@@ -23,14 +24,20 @@ import world.ChunkedTileLayer;
 import world.DualGridSoil;
 import world.ObjectLayer;
 import world.PlacedObject;
+import world.layer.CornerAutotileLayer;
+import world.layer.FenceLayer;
 import world.layer.LayerStack;
 import world.layer.MapLayer;
+import world.layer.PlainTileLayer;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * The map editor scene, pushed over {@link PlayState} by F1 (see {@code Config.EDITOR_ENABLED} +
  * {@code InputAction.TOGGLE_EDITOR}). A <b>free-camera</b> authoring view: no player, no collisions — fly
- * around with WASD/arrows, zoom with {@code -}/{@code =}, pick a tileset from the retractable side panel,
- * choose a tile in the picker popup, and (next slice) paint it onto the map.
+ * around with WASD/arrows, zoom with {@code -}/{@code =}, pick a layer from the retractable <b>Layers</b>
+ * panel, and paint it onto the map (auto-orienting layers paint on click; tile layers open a picker).
  *
  * <p>It edits the <em>same</em> world layers {@link PlayState} owns (handed in here), through its own free
  * {@link GameCamera}, so edits show up immediately back in play. While the editor is on top of the state
@@ -44,9 +51,19 @@ public final class EditorState extends GameState {
 
     /** What a left-click/drag on the map does. SOIL paints the dual-grid tilled flag (auto-orienting); BUSH
      *  paints an auto-orienting 9-slice clump into the collision layer; TILE stamps the picked decoration
-     *  tile; LAYER paints the active editor stack layer (sand/sand-water/fence/props); NONE until a brush
-     *  is chosen. */
+     *  tile; LAYER paints the active editor stack layer (sand/sand-water/fence/props); NONE until chosen. */
     private enum BrushMode { NONE, TILE, SOIL, BUSH, LAYER }
+
+    /** One row in the Layers panel: a name, what activating it does, and (for stack layers) the layer whose
+     *  visibility the eye toggles. {@code visLayer == null} for the built-in rows (no eye). */
+    private final class MenuEntry {
+        final String name;
+        final Runnable activate;
+        final MapLayer visLayer;
+        MenuEntry(String name, Runnable activate, MapLayer visLayer) {
+            this.name = name; this.activate = activate; this.visLayer = visLayer;
+        }
+    }
 
     private final WorldRenderer worldRenderer;     // shared: draws PlayState's live world layers
     private final GameCamera camera;               // the editor's own free camera
@@ -59,7 +76,7 @@ public final class EditorState extends GameState {
     private final EditorPanel panel;
     private final SheetPicker picker;
 
-    // Editable world references (shared with PlayState). Used by placement (next slice).
+    // Editable world references (shared with PlayState).
     private final Assets assets;
     private final TilePalette palette;
     private final ChunkedTileLayer decoration;
@@ -67,6 +84,10 @@ public final class EditorState extends GameState {
     private final ChunkedTileLayer collision;
     private final ObjectLayer objects;
     private final LayerStack layerStack;
+
+    private final List<MenuEntry> menu = new ArrayList<>();
+    private int activeMenuRow = -1;
+    private MapLayer pendingLayer;                     // stack layer awaiting a tile from the picker
 
     private final float tile;                          // world units per cell (== Config.TILE)
     private final BushAutotiler bushAutotiler;         // 9-slice bush painting into the collision layer
@@ -105,8 +126,27 @@ public final class EditorState extends GameState {
         font = new PixelFont(assets.get("ui/game_font.png"));
         panel = new EditorPanel(font, whiteRegion);
         picker = new SheetPicker(assets, font, whiteRegion);
+        buildMenu();
         applyCamera();
     }
+
+    /** Build the Layers panel: the built-in soil + bush layers, every editor stack layer (sand/sand-water/
+     *  fence/props + any added), and the plain decoration sheets. Rebuilt when a layer is added. */
+    private void buildMenu() {
+        menu.clear();
+        menu.add(new MenuEntry("Soil", () -> mode = BrushMode.SOIL, null));
+        for (MapLayer layer : layerStack.all()) {
+            menu.add(new MenuEntry(layer.name(), () -> activateStackLayer(layer), layer));
+        }
+        menu.add(new MenuEntry("Tall grass", () -> selectBush(bushSheet("tallgrass"), 0), null));
+        menu.add(new MenuEntry("Wheat", () -> selectBush(bushSheet("wheat"), BushAutotiler.SPAN), null));
+        menu.add(new MenuEntry("Young wheat", () -> selectBush(bushSheet("youngwheat"), 2 * BushAutotiler.SPAN), null));
+        menu.add(new MenuEntry("Grass detail", () -> picker.open(TilePalette.indexOf("tilesets/grassTileset.png")), null));
+        menu.add(new MenuEntry("Rocks & ore", () -> picker.open(TilePalette.indexOf("tilesets/ore.png")), null));
+        menu.add(new MenuEntry("Reeds", () -> picker.open(TilePalette.indexOf("tilesets/reed.png")), null));
+    }
+
+    private static int bushSheet(String name) { return TilePalette.indexOf("tilesets/" + name + ".png"); }
 
     @Override
     public void update(float delta) {
@@ -121,8 +161,6 @@ public final class EditorState extends GameState {
             return;
         }
 
-        // Mouse. UI clicks are edge-triggered (the picker is modal; otherwise the panel gets first refusal);
-        // paint strokes are continuous (held) but only over the map, never over the panel/picker.
         int mx = Gdx.input.getX(), my = Gdx.input.getY();
         int w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
         boolean overUi = picker.isOpen() || panel.contains(mx, my, h);
@@ -132,8 +170,13 @@ public final class EditorState extends GameState {
                 int id = picker.handleClick(mx, my, w, h);
                 if (id != TilePalette.EMPTY) applyPickedTile(id);
             } else {
-                EditorPanel.Hit hit = panel.handleClick(mx, my, h);
-                if (hit == EditorPanel.Hit.SHEET) selectSheet(panel.selectedSheet());
+                EditorPanel.Hit hit = panel.handleClick(mx, my, h, menu.size(), eyeFlags());
+                switch (hit.kind) {
+                    case LAYER -> { activeMenuRow = hit.index; pendingLayer = null; menu.get(hit.index).activate.run(); }
+                    case EYE -> { MapLayer l = menu.get(hit.index).visLayer; if (l != null) l.setVisible(!l.isVisible()); }
+                    case ADD -> addLayer();
+                    default -> { } // TAB / PANEL / NONE
+                }
             }
         }
         if (!overUi) {
@@ -152,7 +195,6 @@ public final class EditorState extends GameState {
         if (input.isDown(InputAction.MOVE_UP))    camY -= pan; // Y-down
         if (input.isDown(InputAction.MOVE_DOWN))  camY += pan;
 
-        // Zoom on -/= (and keypad), continuous while held.
         if (Gdx.input.isKeyPressed(Input.Keys.EQUALS) || Gdx.input.isKeyPressed(Input.Keys.PLUS)
                 || Gdx.input.isKeyPressed(Input.Keys.NUMPAD_ADD)) {
             zoom = Math.max(MIN_ZOOM, zoom / (1f + ZOOM_RATE * delta));
@@ -168,51 +210,39 @@ public final class EditorState extends GameState {
         camera.follow(camX, camY);
     }
 
-    /** A tileset row was clicked: the plow sheet paints soil and the bush sheets paint auto-orienting clumps
-     *  (no per-tile pick — connectivity decides the piece); every other sheet opens the picker. */
-    private void selectSheet(int sheetIndex) {
-        switch (TilePalette.sheet(sheetIndex).path) {
-            case "tilesets/plowed_soil.png" -> mode = BrushMode.SOIL;
-            case "tilesets/tallgrass.png"   -> selectBush(sheetIndex, 0);
-            case "tilesets/wheat.png"       -> selectBush(sheetIndex, BushAutotiler.SPAN);
-            case "tilesets/youngwheat.png"  -> selectBush(sheetIndex, 2 * BushAutotiler.SPAN);
-            case "tilesets/sand.png"        -> activateLayer("Sand");
-            case "tilesets/sandwater.png"   -> activateLayer("Sand water");
-            default -> picker.open(sheetIndex);
+    /** Activate a stack layer: auto-orienting (corner) layers paint immediately; tile/fence layers open the
+     *  picker to choose a tile (a fence piece auto-orients; a gate is placed as-is). */
+    private void activateStackLayer(MapLayer layer) {
+        if (layer.kind() == MapLayer.Kind.CORNER) {
+            setActiveLayer(layer);
+        } else {
+            pendingLayer = layer;
+            picker.open(layer.sheetIndex());
         }
     }
 
-    /** Make the named editor stack layer the active paint target (auto-orienting layers paint on click). */
-    private void activateLayer(String name) {
+    private void setActiveLayer(MapLayer layer) {
         for (int i = 0; i < layerStack.size(); i++) {
-            if (layerStack.get(i).name().equals(name)) {
-                layerStack.setActive(i);
-                mode = BrushMode.LAYER;
-                layerBrush = 0;
-                return;
-            }
+            if (layerStack.get(i) == layer) { layerStack.setActive(i); break; }
         }
+        mode = BrushMode.LAYER;
+        layerBrush = 0;
     }
 
-    /** Route a tile picked from the popup: fence tiles paint the Fence layer (gate tiles 16–18 placed as-is,
-     *  others auto-orient); props tiles stamp the Props layer; anything else stamps the generic decoration. */
+    /** Route a tile picked from the popup. If a stack layer was awaiting one, paint that layer (a fence gate
+     *  16–18 is placed as-is, other fence tiles auto-orient, a props tile stamps). Otherwise stamp the generic
+     *  decoration layer. */
     private void applyPickedTile(int id) {
-        String path = TilePalette.sheet(TilePalette.sheetIndexOf(id)).path;
-        int tile = TilePalette.tileIndexOf(id) + 1; // 1-based tile within the sheet
-        switch (path) {
-            case "tilesets/fence.png" -> {
-                activateLayer("Fence");
-                layerBrush = (tile >= 16 && tile <= 18) ? tile : 0; // a gate, else auto-orient
-            }
-            case "tilesets/fence_alt.png" -> {
-                activateLayer("Fence alt");
-                layerBrush = (tile >= 16 && tile <= 18) ? tile : 0;
-            }
-            case "tilesets/farming_fishing.png" -> {
-                activateLayer("Props");
-                layerBrush = tile;
-            }
-            default -> { brushTileId = id; mode = BrushMode.TILE; }
+        int tileNum = TilePalette.tileIndexOf(id) + 1; // 1-based tile within the sheet
+        if (pendingLayer != null) {
+            MapLayer l = pendingLayer;
+            pendingLayer = null;
+            setActiveLayer(l);
+            layerBrush = (l.kind() == MapLayer.Kind.FENCE)
+                    ? ((tileNum >= 16 && tileNum <= 18) ? tileNum : 0) : tileNum;
+        } else {
+            brushTileId = id;
+            mode = BrushMode.TILE;
         }
     }
 
@@ -221,6 +251,43 @@ public final class EditorState extends GameState {
         mode = BrushMode.BUSH;
         bushBase = base;
         brushTileId = TilePalette.pack(sheetIndex, 10); // 0-based 10 == tile 11, the clump centre
+    }
+
+    /** Add a new layer by duplicating the active stack layer's type (so you can group/organise content). The
+     *  new empty layer is reslice-backed by the same sheet, persisted, and made active. */
+    private void addLayer() {
+        MapLayer base = (activeMenuRow >= 0 && activeMenuRow < menu.size()) ? menu.get(activeMenuRow).visLayer : null;
+        if (base == null || base.sheetIndex() < 0) return; // can only duplicate a sheet-backed stack layer
+        TilePalette.Sheet sheet = TilePalette.sheet(base.sheetIndex());
+        TextureRegion[] regions = TextureSlicer.slice(assets.get(sheet.path), sheet.rows, sheet.cols);
+        ChunkedTileLayer grid = new ChunkedTileLayer(base.grid().cols(), base.grid().rows(), tile);
+        String name = uniqueLayerName(base.name());
+        MapLayer copy = switch (base.kind()) {
+            case PLAIN -> new PlainTileLayer(name, grid, regions, base.isSolid(), base.isUpright(), base.sheetIndex());
+            case CORNER -> new CornerAutotileLayer(name, grid, regions, base.sheetIndex());
+            case FENCE -> new FenceLayer(name, grid, regions, base.sheetIndex());
+        };
+        layerStack.add(copy);
+        buildMenu();
+        for (int i = 0; i < menu.size(); i++) {
+            if (menu.get(i).visLayer == copy) { activeMenuRow = i; activateStackLayer(copy); break; }
+        }
+    }
+
+    private String uniqueLayerName(String base) {
+        String stem = base.replaceAll(" \\d+$", "");
+        for (int n = 2; ; n++) {
+            String name = stem + " " + n;
+            boolean taken = false;
+            for (int i = 0; i < layerStack.size(); i++) if (layerStack.get(i).name().equals(name)) taken = true;
+            if (!taken) return name;
+        }
+    }
+
+    private boolean[] eyeFlags() {
+        boolean[] eye = new boolean[menu.size()];
+        for (int i = 0; i < menu.size(); i++) eye[i] = menu.get(i).visLayer != null;
+        return eye;
     }
 
     /** Paint the current brush at the cell under the cursor. */
@@ -237,9 +304,8 @@ public final class EditorState extends GameState {
         }
     }
 
-    /** Erase under the cursor. When {@code allowObject} (the right-button just went down) and a prop is under
-     *  the cursor, remove that prop; otherwise clear the cell's decoration tile + soil (so a held right-drag
-     *  scrubs tiles without nuking a stack of props). */
+    /** Erase under the cursor. When {@code allowObject} (the right-button just went down) and a legacy free
+     *  object is under the cursor, remove it; otherwise clear the cell across every layer. */
     private void eraseAt(int screenX, int screenY, boolean allowObject) {
         var wp = camera.unproject(screenX, screenY);
         if (allowObject) {
@@ -259,9 +325,22 @@ public final class EditorState extends GameState {
         float w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
         worldRenderer.renderForEditor(batch, camera);
         if (!picker.isOpen()) renderHover(batch, h);
-        panel.render(batch, camera.hudCombined(), w, h);
+        renderPanel(batch, w, h);
         if (!picker.isOpen()) renderBrushSwatch(batch, w);
         picker.render(batch, camera.hudCombined(), w, h, brushTileId);
+    }
+
+    private void renderPanel(SpriteBatch batch, float w, float h) {
+        String[] names = new String[menu.size()];
+        boolean[] eye = new boolean[menu.size()];
+        boolean[] visible = new boolean[menu.size()];
+        for (int i = 0; i < menu.size(); i++) {
+            names[i] = menu.get(i).name;
+            MapLayer vl = menu.get(i).visLayer;
+            eye[i] = vl != null;
+            visible[i] = vl != null && vl.isVisible();
+        }
+        panel.render(batch, camera.hudCombined(), w, h, names, activeMenuRow, eye, visible);
     }
 
     /** Preview the brush in the hovered cell (world space): the brush tile ghosted in the cell plus a yellow
@@ -303,8 +382,7 @@ public final class EditorState extends GameState {
         return null;
     }
 
-    /** A small swatch in the top-right showing the current paint brush (tile / soil / layer), so it's clear
-     *  what a map click will place. */
+    /** A small swatch in the top-right showing the current paint brush, so it's clear what a click places. */
     private void renderBrushSwatch(SpriteBatch batch, float screenW) {
         String label;
         if (mode == BrushMode.TILE) label = "TILE";
@@ -316,18 +394,13 @@ public final class EditorState extends GameState {
         }
         else return; // NONE
         TextureRegion r = previewRegion(); // the brush tile (null for soil / sand auto layers)
-        int srcW = 32, srcH = 32;
         float s = 64f, bx = screenW - s - 16f, by = 16f;
         batch.setProjectionMatrix(camera.hudCombined());
         batch.begin();
         batch.setColor(0.10f, 0.11f, 0.14f, 0.92f);
         batch.draw(whiteRegion, bx - 6f, by - 6f, s + 12f, s + 26f);
         batch.setColor(Color.WHITE);
-        if (r != null) {
-            float aspect = srcW / (float) srcH, dw = s, dh = s;
-            if (aspect >= 1f) dh = s / aspect; else dw = s * aspect; // fit into the swatch, keep aspect
-            batch.draw(r, bx + (s - dw) / 2f, by + (s - dh) / 2f, dw, dh);
-        }
+        if (r != null) batch.draw(r, bx, by, s, s);
         font.draw(batch, label, bx + 2f, by + s + 4f, 12f, 12f, 11f);
         batch.end();
     }
