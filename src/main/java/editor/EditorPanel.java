@@ -27,7 +27,7 @@ public final class EditorPanel {
     private static final float EYE = 18f;
 
     /** What a click hit. {@code index} is the layer row for LAYER/EYE. */
-    public enum HitKind { NONE, PANEL, TAB, LAYER, EYE, ADD }
+    public enum HitKind { NONE, PANEL, TAB, LAYER, EYE }
 
     public static final class Hit {
         public final HitKind kind;
@@ -56,9 +56,9 @@ public final class EditorPanel {
         batch.setColor(Color.WHITE);
     }
 
-    /** Draw the panel. {@code eye[i]} = this layer has a visibility toggle; {@code visible[i]} = its state. */
+    /** Draw the panel. Every row has a visibility eye; {@code visible[i]} is its on/off state. */
     public void render(SpriteBatch batch, Matrix4 hudCombined, float screenW, float screenH,
-                       String[] names, int active, boolean[] eye, boolean[] visible) {
+                       String[] names, int active, boolean[] visible) {
         batch.setProjectionMatrix(hudCombined);
         batch.begin();
         float px = panelX();
@@ -70,16 +70,11 @@ public final class EditorPanel {
                 float ry = rowY(i);
                 if (i == active) rect(batch, px, ry, PANEL_W, ROW_H, 0.24f, 0.40f, 0.26f, 1f);
                 text(batch, names[i], px + PAD, ry + 7f, 0.9f, 0.92f, 0.9f);
-                if (eye[i]) {
-                    float ex = px + PANEL_W - EYE - 8f, ey = ry + (ROW_H - EYE) / 2f;
-                    rect(batch, ex, ey, EYE, EYE, 0.05f, 0.05f, 0.07f, 1f);            // eye well
-                    if (visible[i]) rect(batch, ex + 4f, ey + 4f, EYE - 8f, EYE - 8f, 0.7f, 0.85f, 0.7f, 1f);
-                }
+                float ex = px + PANEL_W - EYE - 8f, ey = ry + (ROW_H - EYE) / 2f;
+                rect(batch, ex, ey, EYE, EYE, 0.05f, 0.05f, 0.07f, 1f);                // eye well
+                if (visible[i]) rect(batch, ex + 4f, ey + 4f, EYE - 8f, EYE - 8f, 0.7f, 0.85f, 0.7f, 1f);
             }
-            float addY = rowY(names.length);
-            rect(batch, px, addY, PANEL_W, ROW_H, 0.16f, 0.22f, 0.30f, 1f);
-            text(batch, "+ ADD LAYER", px + PAD, addY + 7f, 0.8f, 0.9f, 0.7f);
-            text(batch, "WASD PAN  - = ZOOM", px + PAD, screenH - 50f, 0.6f, 0.62f, 0.66f);
+            text(batch, "WASD PAN  WHEEL ZOOM", px + PAD, screenH - 50f, 0.6f, 0.62f, 0.66f);
             text(batch, "F1 EXIT  RMB ERASE", px + PAD, screenH - 30f, 0.6f, 0.62f, 0.66f);
         }
         float tabX = px + PANEL_W, tabY = screenH / 2f - TAB_H / 2f;
@@ -96,8 +91,8 @@ public final class EditorPanel {
         batch.setColor(Color.WHITE);
     }
 
-    /** Resolve a click. {@code eye[]} mirrors render so an eye hit is reported only where one is drawn. */
-    public Hit handleClick(float x, float y, float screenH, int rowCount, boolean[] eye) {
+    /** Resolve a click. Every row has an eye hit-box at its right edge; the rest of the row selects the layer. */
+    public Hit handleClick(float x, float y, float screenH, int rowCount) {
         float px = panelX();
         float tabX = px + PANEL_W, tabY = screenH / 2f - TAB_H / 2f;
         if (within(x, y, tabX, tabY, TAB_W, TAB_H)) {
@@ -109,14 +104,11 @@ public final class EditorPanel {
         for (int i = 0; i < rowCount; i++) {
             float ry = rowY(i);
             if (within(x, y, px, ry, PANEL_W, ROW_H)) {
-                if (eye[i]) {
-                    float ex = px + PANEL_W - EYE - 8f, ey = ry + (ROW_H - EYE) / 2f;
-                    if (within(x, y, ex, ey, EYE, EYE)) return new Hit(HitKind.EYE, i);
-                }
+                float ex = px + PANEL_W - EYE - 8f, ey = ry + (ROW_H - EYE) / 2f;
+                if (within(x, y, ex, ey, EYE, EYE)) return new Hit(HitKind.EYE, i);
                 return new Hit(HitKind.LAYER, i);
             }
         }
-        if (within(x, y, px, rowY(rowCount), PANEL_W, ROW_H)) return new Hit(HitKind.ADD, -1);
         return new Hit(HitKind.PANEL, -1);
     }
 

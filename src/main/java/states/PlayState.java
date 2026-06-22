@@ -52,6 +52,7 @@ import world.PlacedObject;
 import world.layer.CornerAutotileLayer;
 import world.layer.FenceLayer;
 import world.layer.LayerStack;
+import world.layer.LayerVisibility;
 import world.layer.MapLayer;
 import world.layer.PlainTileLayer;
 
@@ -104,6 +105,7 @@ public class PlayState extends GameState {
     private final ChunkedTileLayer decorationLayer;
     private final ObjectLayer objectLayer;
     private final LayerStack layerStack; // editor-authored stackable layers (sand, sand-water, fence, props, ...)
+    private final LayerVisibility layerVisibility = new LayerVisibility(); // editor show/hide for built-in layers
     private final CollisionResolver collisionResolver;
     private final PlayerCharacter player; // position, facing, tool, walk animation; also the collision Body
     private final int[] inventoryItems, inventoryAmounts; // live refs into the Inventory built at load
@@ -245,7 +247,7 @@ public class PlayState extends GameState {
         worldPersistence.restoreCrops(loaded.crops());
         worldRenderer = new WorldRenderer(grassLayer, soil, collisionLayer, cropField, cropGeometry, Config.TILE,
                 grassRegions, soilRegions, collisionRegions, wateredRegions, frameRegion,
-                decorationLayer, objectLayer, palette, layerStack);
+                decorationLayer, objectLayer, palette, layerStack, layerVisibility);
         farmInteraction = new FarmInteraction(soil, cropField, cropRegistry, itemRegistry, cropGeometry,
                 collisionResolver, gameCamera, player, inventoryItems, inventoryAmounts);
         syncSelectedTool(); // initial held tool reflects the selected hotbar slot
@@ -279,43 +281,22 @@ public class PlayState extends GameState {
         return stack;
     }
 
-    /** Restore saved editor-layer grids into the stack, matched by layer name. A saved layer that isn't one of
-     *  the fixed built-ins (e.g. a user-added layer) is rebuilt from its kind + sheet, then its grid copied in. */
+    /** Restore saved editor-layer grids into the stack, matched by layer name. Saved layers that aren't one of
+     *  the fixed built-ins are ignored (so any leftover one-off layer simply drops away on the next load/save). */
     private void applySavedLayers(LayerSave[] saved) {
         if (saved == null) return;
-        int cols = collisionLayer.cols(), rows = collisionLayer.rows();
         for (LayerSave s : saved) {
-            MapLayer layer = findLayer(s.name);
-            if (layer == null) {
-                layer = rebuildLayer(s, cols, rows);
-                if (layer == null) continue; // a generic layer with no sheet can't be resliced
-                layerStack.add(layer);
-            }
             if (s.grid == null) continue;
-            ChunkedTileLayer g = layer.grid();
-            for (int c = 0; c < s.grid.length && c < g.cols(); c++)
-                for (int r = 0; r < s.grid[c].length && r < g.rows(); r++)
-                    if (s.grid[c][r] != 0) g.set(c, r, s.grid[c][r]);
+            for (int i = 0; i < layerStack.size(); i++) {
+                MapLayer layer = layerStack.get(i);
+                if (!layer.name().equals(s.name)) continue;
+                ChunkedTileLayer g = layer.grid();
+                for (int c = 0; c < s.grid.length && c < g.cols(); c++)
+                    for (int r = 0; r < s.grid[c].length && r < g.rows(); r++)
+                        if (s.grid[c][r] != 0) g.set(c, r, s.grid[c][r]);
+                break;
+            }
         }
-    }
-
-    private MapLayer findLayer(String name) {
-        for (int i = 0; i < layerStack.size(); i++)
-            if (layerStack.get(i).name().equals(name)) return layerStack.get(i);
-        return null;
-    }
-
-    /** Reconstruct a saved layer from its kind + sheet (for user-added layers not in the fixed set). */
-    private MapLayer rebuildLayer(LayerSave s, int cols, int rows) {
-        if (s.sheetIndex < 0) return null;
-        TilePalette.Sheet sheet = TilePalette.sheet(s.sheetIndex);
-        TextureRegion[] regions = TextureSlicer.slice(loadTexture(sheet.path), sheet.rows, sheet.cols);
-        ChunkedTileLayer grid = new ChunkedTileLayer(cols, rows, Config.TILE);
-        return switch (MapLayer.Kind.values()[s.kind]) {
-            case PLAIN -> new PlainTileLayer(s.name, grid, regions, s.solid, s.upright, s.sheetIndex);
-            case CORNER -> new CornerAutotileLayer(s.name, grid, regions, s.sheetIndex);
-            case FENCE -> new FenceLayer(s.name, grid, regions, s.sheetIndex);
-        };
     }
 
     /** Turn a data {@link ToolActionBlueprint} into a live {@link ToolAction}, slicing from the named sheet
@@ -407,7 +388,7 @@ public class PlayState extends GameState {
         // update is skipped this frame; while the editor is on top, PlayState.update won't run at all.
         if (Config.EDITOR_ENABLED && input.isJustPressed(InputAction.TOGGLE_EDITOR)) {
             stateManager.push(new EditorState(stateManager, worldRenderer, assets, palette,
-                    decorationLayer, soil, collisionLayer, objectLayer, layerStack,
+                    decorationLayer, soil, collisionLayer, layerStack, layerVisibility,
                     player.centerX(), player.centerY()));
             return;
         }

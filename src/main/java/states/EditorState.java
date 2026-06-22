@@ -2,6 +2,7 @@ package states;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.InputAdapter;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
@@ -16,22 +17,18 @@ import editor.TilePalette;
 import input.InputAction;
 import input.InputBindings;
 import render.GameCamera;
-import render.TextureSlicer;
 import render.WorldRenderer;
 import ui.PixelFont;
 import world.BushAutotiler;
 import world.ChunkedTileLayer;
 import world.DualGridSoil;
-import world.ObjectLayer;
-import world.PlacedObject;
-import world.layer.CornerAutotileLayer;
-import world.layer.FenceLayer;
 import world.layer.LayerStack;
+import world.layer.LayerVisibility;
 import world.layer.MapLayer;
-import world.layer.PlainTileLayer;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 /**
  * The map editor scene, pushed over {@link PlayState} by F1 (see {@code Config.EDITOR_ENABLED} +
@@ -47,6 +44,7 @@ import java.util.List;
 public final class EditorState extends GameState {
     private static final float PAN_SPEED = 1800f;  // world units/sec at zoom 1 (scaled up when zoomed out)
     private static final float ZOOM_RATE = 1.8f;   // multiplicative zoom per second while held
+    private static final float SCROLL_STEP = 1.15f; // zoom factor per mouse-wheel notch
     private static final float MIN_ZOOM = 0.5f, MAX_ZOOM = 8f;
 
     /** What a left-click/drag on the map does. SOIL paints the dual-grid tilled flag (auto-orienting); BUSH
@@ -54,14 +52,15 @@ public final class EditorState extends GameState {
      *  tile; LAYER paints the active editor stack layer (sand/sand-water/fence/props); NONE until chosen. */
     private enum BrushMode { NONE, TILE, SOIL, BUSH, LAYER }
 
-    /** One row in the Layers panel: a name, what activating it does, and (for stack layers) the layer whose
-     *  visibility the eye toggles. {@code visLayer == null} for the built-in rows (no eye). */
-    private final class MenuEntry {
+    /** One row in the Layers panel: a name, what activating it does, and the visibility get/toggle for its eye
+     *  (every layer — stack or built-in — has one). */
+    private static final class MenuEntry {
         final String name;
         final Runnable activate;
-        final MapLayer visLayer;
-        MenuEntry(String name, Runnable activate, MapLayer visLayer) {
-            this.name = name; this.activate = activate; this.visLayer = visLayer;
+        final BooleanSupplier visible;
+        final Runnable toggleVisible;
+        MenuEntry(String name, Runnable activate, BooleanSupplier visible, Runnable toggleVisible) {
+            this.name = name; this.activate = activate; this.visible = visible; this.toggleVisible = toggleVisible;
         }
     }
 
@@ -82,8 +81,8 @@ public final class EditorState extends GameState {
     private final ChunkedTileLayer decoration;
     private final DualGridSoil soil;
     private final ChunkedTileLayer collision;
-    private final ObjectLayer objects;
     private final LayerStack layerStack;
+    private final LayerVisibility visibility;
 
     private final List<MenuEntry> menu = new ArrayList<>();
     private int activeMenuRow = -1;
@@ -100,7 +99,7 @@ public final class EditorState extends GameState {
 
     public EditorState(GameStateManager stateManager, WorldRenderer worldRenderer, Assets assets,
                        TilePalette palette, ChunkedTileLayer decoration, DualGridSoil soil,
-                       ChunkedTileLayer collision, ObjectLayer objects, LayerStack layerStack,
+                       ChunkedTileLayer collision, LayerStack layerStack, LayerVisibility visibility,
                        float startX, float startY) {
         super(stateManager);
         this.worldRenderer = worldRenderer;
@@ -109,8 +108,8 @@ public final class EditorState extends GameState {
         this.decoration = decoration;
         this.soil = soil;
         this.collision = collision;
-        this.objects = objects;
         this.layerStack = layerStack;
+        this.visibility = visibility;
         this.tile = decoration.tileSize();
         this.bushAutotiler = new BushAutotiler(collision);
         this.camX = startX;
@@ -128,22 +127,37 @@ public final class EditorState extends GameState {
         picker = new SheetPicker(assets, font, whiteRegion);
         buildMenu();
         applyCamera();
+        // Mouse-wheel zoom needs the scroll callback (polling can't read it): scroll down zooms in, up zooms out.
+        Gdx.input.setInputProcessor(new InputAdapter() {
+            @Override public boolean scrolled(float amountX, float amountY) {
+                zoom = clampZoom(zoom * (amountY > 0 ? 1f / SCROLL_STEP : SCROLL_STEP));
+                return true;
+            }
+        });
     }
+
+    private static float clampZoom(float z) { return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z)); }
 
     /** Build the Layers panel: the built-in soil + bush layers, every editor stack layer (sand/sand-water/
      *  fence/props + any added), and the plain decoration sheets. Rebuilt when a layer is added. */
     private void buildMenu() {
         menu.clear();
-        menu.add(new MenuEntry("Soil", () -> mode = BrushMode.SOIL, null));
+        menu.add(new MenuEntry("Soil", () -> mode = BrushMode.SOIL,
+                () -> visibility.soil, () -> visibility.soil = !visibility.soil));
         for (MapLayer layer : layerStack.all()) {
-            menu.add(new MenuEntry(layer.name(), () -> activateStackLayer(layer), layer));
+            menu.add(new MenuEntry(layer.name(), () -> activateStackLayer(layer),
+                    layer::isVisible, () -> layer.setVisible(!layer.isVisible())));
         }
-        menu.add(new MenuEntry("Tall grass", () -> selectBush(bushSheet("tallgrass"), 0), null));
-        menu.add(new MenuEntry("Wheat", () -> selectBush(bushSheet("wheat"), BushAutotiler.SPAN), null));
-        menu.add(new MenuEntry("Young wheat", () -> selectBush(bushSheet("youngwheat"), 2 * BushAutotiler.SPAN), null));
-        menu.add(new MenuEntry("Grass detail", () -> picker.open(TilePalette.indexOf("tilesets/grassTileset.png")), null));
-        menu.add(new MenuEntry("Rocks & ore", () -> picker.open(TilePalette.indexOf("tilesets/ore.png")), null));
-        menu.add(new MenuEntry("Reeds", () -> picker.open(TilePalette.indexOf("tilesets/reed.png")), null));
+        BooleanSupplier bushesVisible = () -> visibility.bushes;
+        Runnable toggleBushes = () -> visibility.bushes = !visibility.bushes;
+        menu.add(new MenuEntry("Tall grass", () -> selectBush(bushSheet("tallgrass"), 0), bushesVisible, toggleBushes));
+        menu.add(new MenuEntry("Wheat", () -> selectBush(bushSheet("wheat"), BushAutotiler.SPAN), bushesVisible, toggleBushes));
+        menu.add(new MenuEntry("Young wheat", () -> selectBush(bushSheet("youngwheat"), 2 * BushAutotiler.SPAN), bushesVisible, toggleBushes));
+        BooleanSupplier decoVisible = () -> visibility.decoration;
+        Runnable toggleDeco = () -> visibility.decoration = !visibility.decoration;
+        menu.add(new MenuEntry("Grass detail", () -> picker.open(TilePalette.indexOf("tilesets/grassTileset.png")), decoVisible, toggleDeco));
+        menu.add(new MenuEntry("Rocks & ore", () -> picker.open(TilePalette.indexOf("tilesets/ore.png")), decoVisible, toggleDeco));
+        menu.add(new MenuEntry("Reeds", () -> picker.open(TilePalette.indexOf("tilesets/reed.png")), decoVisible, toggleDeco));
     }
 
     private static int bushSheet(String name) { return TilePalette.indexOf("tilesets/" + name + ".png"); }
@@ -170,22 +184,18 @@ public final class EditorState extends GameState {
                 int id = picker.handleClick(mx, my, w, h);
                 if (id != TilePalette.EMPTY) applyPickedTile(id);
             } else {
-                EditorPanel.Hit hit = panel.handleClick(mx, my, h, menu.size(), eyeFlags());
+                EditorPanel.Hit hit = panel.handleClick(mx, my, h, menu.size());
                 switch (hit.kind) {
                     case LAYER -> { activeMenuRow = hit.index; pendingLayer = null; menu.get(hit.index).activate.run(); }
-                    case EYE -> { MapLayer l = menu.get(hit.index).visLayer; if (l != null) l.setVisible(!l.isVisible()); }
-                    case ADD -> addLayer();
+                    case EYE -> menu.get(hit.index).toggleVisible.run();
                     default -> { } // TAB / PANEL / NONE
                 }
             }
         }
         if (!overUi) {
-            // Left paints the brush continuously while held; right-click erases (held to scrub tiles, the
-            // just-pressed frame also removing any legacy free-object under the cursor).
+            // Left paints the active brush continuously while held; right-click erases the active layer only.
             if (Gdx.input.isButtonPressed(Input.Buttons.LEFT)) paintAt(mx, my);
-            if (Gdx.input.isButtonPressed(Input.Buttons.RIGHT)) {
-                eraseAt(mx, my, Gdx.input.isButtonJustPressed(Input.Buttons.RIGHT));
-            }
+            if (Gdx.input.isButtonPressed(Input.Buttons.RIGHT)) eraseAt(mx, my);
         }
 
         // Free pan — fast, and faster still when zoomed out so crossing the map stays quick.
@@ -253,43 +263,6 @@ public final class EditorState extends GameState {
         brushTileId = TilePalette.pack(sheetIndex, 10); // 0-based 10 == tile 11, the clump centre
     }
 
-    /** Add a new layer by duplicating the active stack layer's type (so you can group/organise content). The
-     *  new empty layer is reslice-backed by the same sheet, persisted, and made active. */
-    private void addLayer() {
-        MapLayer base = (activeMenuRow >= 0 && activeMenuRow < menu.size()) ? menu.get(activeMenuRow).visLayer : null;
-        if (base == null || base.sheetIndex() < 0) return; // can only duplicate a sheet-backed stack layer
-        TilePalette.Sheet sheet = TilePalette.sheet(base.sheetIndex());
-        TextureRegion[] regions = TextureSlicer.slice(assets.get(sheet.path), sheet.rows, sheet.cols);
-        ChunkedTileLayer grid = new ChunkedTileLayer(base.grid().cols(), base.grid().rows(), tile);
-        String name = uniqueLayerName(base.name());
-        MapLayer copy = switch (base.kind()) {
-            case PLAIN -> new PlainTileLayer(name, grid, regions, base.isSolid(), base.isUpright(), base.sheetIndex());
-            case CORNER -> new CornerAutotileLayer(name, grid, regions, base.sheetIndex());
-            case FENCE -> new FenceLayer(name, grid, regions, base.sheetIndex());
-        };
-        layerStack.add(copy);
-        buildMenu();
-        for (int i = 0; i < menu.size(); i++) {
-            if (menu.get(i).visLayer == copy) { activeMenuRow = i; activateStackLayer(copy); break; }
-        }
-    }
-
-    private String uniqueLayerName(String base) {
-        String stem = base.replaceAll(" \\d+$", "");
-        for (int n = 2; ; n++) {
-            String name = stem + " " + n;
-            boolean taken = false;
-            for (int i = 0; i < layerStack.size(); i++) if (layerStack.get(i).name().equals(name)) taken = true;
-            if (!taken) return name;
-        }
-    }
-
-    private boolean[] eyeFlags() {
-        boolean[] eye = new boolean[menu.size()];
-        for (int i = 0; i < menu.size(); i++) eye[i] = menu.get(i).visLayer != null;
-        return eye;
-    }
-
     /** Paint the current brush at the cell under the cursor. */
     private void paintAt(int screenX, int screenY) {
         var wp = camera.unproject(screenX, screenY);
@@ -304,20 +277,19 @@ public final class EditorState extends GameState {
         }
     }
 
-    /** Erase under the cursor. When {@code allowObject} (the right-button just went down) and a legacy free
-     *  object is under the cursor, remove it; otherwise clear the cell across every layer. */
-    private void eraseAt(int screenX, int screenY, boolean allowObject) {
+    /** Erase the cell under the cursor on the <b>active layer only</b> — each layer is independent, so erasing
+     *  a sand tile doesn't disturb the fence or decoration in the same cell. */
+    private void eraseAt(int screenX, int screenY) {
         var wp = camera.unproject(screenX, screenY);
-        if (allowObject) {
-            PlacedObject hit = objects.topAt(wp.x, wp.y);
-            if (hit != null) { objects.remove(hit); return; }
-        }
         int col = decoration.colAtWorldX(wp.x), row = decoration.rowAtWorldY(wp.y);
         if (!decoration.inBounds(col, row)) return;
-        decoration.set(col, row, TilePalette.EMPTY);
-        soil.clear(col, row);
-        bushAutotiler.erase(col, row); // clears a bush here + re-tiles its neighbours (no-op on non-bush cells)
-        for (MapLayer l : layerStack.all()) l.erase(col, row); // clear any editor layer (sand/fence/props) here
+        switch (mode) {
+            case TILE -> decoration.set(col, row, TilePalette.EMPTY);
+            case SOIL -> soil.clear(col, row);
+            case BUSH -> bushAutotiler.erase(col, row);
+            case LAYER -> { MapLayer l = layerStack.active(); if (l != null) l.erase(col, row); }
+            case NONE -> { }
+        }
     }
 
     @Override
@@ -332,15 +304,12 @@ public final class EditorState extends GameState {
 
     private void renderPanel(SpriteBatch batch, float w, float h) {
         String[] names = new String[menu.size()];
-        boolean[] eye = new boolean[menu.size()];
         boolean[] visible = new boolean[menu.size()];
         for (int i = 0; i < menu.size(); i++) {
             names[i] = menu.get(i).name;
-            MapLayer vl = menu.get(i).visLayer;
-            eye[i] = vl != null;
-            visible[i] = vl != null && vl.isVisible();
+            visible[i] = menu.get(i).visible.getAsBoolean();
         }
-        panel.render(batch, camera.hudCombined(), w, h, names, activeMenuRow, eye, visible);
+        panel.render(batch, camera.hudCombined(), w, h, names, activeMenuRow, visible);
     }
 
     /** Preview the brush in the hovered cell (world space): the brush tile ghosted in the cell plus a yellow
@@ -413,6 +382,7 @@ public final class EditorState extends GameState {
 
     @Override
     public void dispose() {
+        Gdx.input.setInputProcessor(null); // PlayState polls input; don't leave the editor's scroll handler set
         white.dispose();
     }
 }

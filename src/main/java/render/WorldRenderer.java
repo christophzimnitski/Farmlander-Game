@@ -15,6 +15,7 @@ import world.DualGridSoil;
 import world.ObjectLayer;
 import world.PlacedObject;
 import world.layer.LayerStack;
+import world.layer.LayerVisibility;
 
 import java.util.List;
 
@@ -41,6 +42,7 @@ public final class WorldRenderer {
     private final CropGeometry cropGeometry;
     private final TilePalette palette;         // resolves decoration ids -> regions
     private final LayerStack layerStack;       // editor-authored layers (sand/sand-water ground, fence/props upright)
+    private final LayerVisibility visibility;  // show/hide flags for the built-in soil/bushes/decoration layers
     private final float tile;
 
     private final TextureRegion[] grassRegions, soilRegions, collisionRegions;
@@ -53,7 +55,7 @@ public final class WorldRenderer {
                          TextureRegion[] collisionRegions, TextureRegion[] wateredRegions,
                          TextureRegion frameRegion,
                          ChunkedTileLayer decoration, ObjectLayer objects, TilePalette palette,
-                         LayerStack layerStack) {
+                         LayerStack layerStack, LayerVisibility visibility) {
         this.grass = grass;
         this.soil = soil;
         this.collision = collision;
@@ -69,6 +71,7 @@ public final class WorldRenderer {
         this.objects = objects;
         this.palette = palette;
         this.layerStack = layerStack;
+        this.visibility = visibility;
     }
 
     /** One world pass: grass → soil → watered blobs → highlight → crops/bushes/player depth-sorted, between
@@ -85,19 +88,18 @@ public final class WorldRenderer {
         batch.setProjectionMatrix(camera.worldCombined());
         batch.begin();
         drawArray(batch, grass, grassRegions, view);
-        drawSoil(batch, view);
-        drawWateredBlobs(batch, view);
-        drawDecoration(batch, view);              // editor-placed tiles, flat above the ground
+        if (visibility.soil) { drawSoil(batch, view); drawWateredBlobs(batch, view); }
+        if (visibility.decoration) drawDecoration(batch, view); // editor-placed tiles, flat above the ground
         layerStack.drawGround(batch, view, tile); // editor ground layers (sand / sand-water)
         drawHighlight(batch, highlightCol, highlightRow);
         drawCrops(batch, feetY, false, view);     // crops rooted above the player -> behind
-        drawCollision(batch, feetY, false, view); // bushes behind
+        if (visibility.bushes) drawCollision(batch, feetY, false, view); // bushes behind
         drawObjects(batch, feetY, false, view);   // props behind
         layerStack.drawDepth(batch, view, tile, feetY, false); // editor upright layers behind (fence/props)
         drawPlayer(batch, player, toolActions);
         layerStack.drawDepth(batch, view, tile, feetY, true);  // editor upright layers in front
         drawObjects(batch, feetY, true, view);    // props in front
-        drawCollision(batch, feetY, true, view);  // bushes in front
+        if (visibility.bushes) drawCollision(batch, feetY, true, view); // bushes in front
         drawCrops(batch, feetY, true, view);      // crops rooted at/below the player -> in front
         batch.end();
     }
@@ -114,11 +116,10 @@ public final class WorldRenderer {
         batch.setProjectionMatrix(camera.worldCombined());
         batch.begin();
         drawArray(batch, grass, grassRegions, view);
-        drawSoil(batch, view);
-        drawWateredBlobs(batch, view);
-        drawDecoration(batch, view);
+        if (visibility.soil) { drawSoil(batch, view); drawWateredBlobs(batch, view); }
+        if (visibility.decoration) drawDecoration(batch, view);
         layerStack.drawGround(batch, view, tile);
-        drawCollision(batch, feetY, false, view);
+        if (visibility.bushes) drawCollision(batch, feetY, false, view);
         drawObjects(batch, feetY, false, view);
         layerStack.drawDepth(batch, view, tile, feetY, false);
         drawCrops(batch, feetY, false, view);

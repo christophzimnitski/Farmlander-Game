@@ -32,7 +32,7 @@ public final class FenceAutotiler {
     public static int tileFor(boolean n, boolean e, boolean s, boolean w) {
         if (!n && !e && !s && !w) return 4;          // isolated -> a lone post
         if (!n && !s) return e ? (w ? 2 : 1) : 3;    // horizontal: E+W=2, E=1(left-end), W=3(right-end)
-        if (!e && !w) return s ? (n ? 5 : 4) : 6;    // vertical:   N+S=5, S=4(top-end), N=6(bottom-end)
+        if (!e && !w) return s ? (n ? 5 : 6) : 4;    // vertical:   N+S=5, S=6(top-end), N=4(bottom-end)
         if (n && e && s && w) return 11;             // cross
         if (s && e && w) return 8;                   // top edge   (down + left + right)
         if (n && e && w) return 14;                  // bottom edge
