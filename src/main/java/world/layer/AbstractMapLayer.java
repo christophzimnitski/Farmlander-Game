@@ -56,4 +56,38 @@ abstract class AbstractMapLayer implements MapLayer {
                                     com.badlogic.gdx.math.Rectangle view, float tile, float feetY, boolean inFront) { }
 
     protected static int clamp(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+    // --- shared per-cell drawing (used by the plain + fence layers) ---
+
+    protected interface CellOp { void at(int col, int row, int value); }
+
+    /** Visit each non-empty, in-range cell whose tile could touch the view (one-cell padding), clamped. */
+    protected void forEachCell(com.badlogic.gdx.math.Rectangle view, float tile, CellOp op) {
+        int loCol = clamp((int) Math.floor(view.x / tile) - 1, 0, grid.cols() - 1);
+        int hiCol = clamp((int) Math.floor((view.x + view.width) / tile) + 1, 0, grid.cols() - 1);
+        int loRow = clamp((int) Math.floor(view.y / tile) - 1, 0, grid.rows() - 1);
+        int hiRow = clamp((int) Math.floor((view.y + view.height) / tile) + 1, 0, grid.rows() - 1);
+        for (int col = loCol; col <= hiCol; col++) {
+            for (int row = loRow; row <= hiRow; row++) {
+                int v = grid.get(col, row);
+                if (v >= 1 && v < regions.length && regions[v] != null) op.at(col, row, v);
+            }
+        }
+    }
+
+    /** Draw every cell flat (ground layers). */
+    protected void drawCellsFlat(com.badlogic.gdx.graphics.g2d.SpriteBatch batch,
+                                 com.badlogic.gdx.math.Rectangle view, float tile) {
+        forEachCell(view, tile, (col, row, v) -> batch.draw(regions[v], col * tile, row * tile, tile, tile));
+    }
+
+    /** Draw cells depth-split by their ground line vs the player's feet (upright layers). */
+    protected void drawCellsDepth(com.badlogic.gdx.graphics.g2d.SpriteBatch batch,
+                                  com.badlogic.gdx.math.Rectangle view, float tile, float feetY, boolean inFront) {
+        forEachCell(view, tile, (col, row, v) -> {
+            float threshold = row * tile + DEPTH_OFFSET;
+            boolean drawIt = inFront ? (feetY <= threshold) : (feetY >= threshold);
+            if (drawIt) batch.draw(regions[v], col * tile, row * tile, tile, tile);
+        });
+    }
 }

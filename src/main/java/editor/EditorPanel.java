@@ -26,15 +26,14 @@ public final class EditorPanel {
     private static final float GLYPH = 15f, ADVANCE = 13f;
 
     /** What a click landed on, so the editor knows whether to consume it and what to do (open the picker for
-     *  a tileset, switch to a prop brush, or nothing). */
-    public enum Hit { NONE, PANEL, TAB, SHEET, PROP }
+     *  a tileset, toggle the tab, or nothing). */
+    public enum Hit { NONE, PANEL, TAB, SHEET }
 
     private final PixelFont font;
     private final TextureRegion whiteRegion;
 
     private boolean collapsed = false;
     private int selectedSheet = -1; // last-clicked tileset row (index into TilePalette), -1 = none
-    private int selectedProp = -1;  // last-clicked prop row (index into PropCatalog), -1 = none
 
     public EditorPanel(PixelFont font, TextureRegion whiteRegion) {
         this.font = font;
@@ -45,16 +44,9 @@ public final class EditorPanel {
 
     public int selectedSheet() { return selectedSheet; }
 
-    public int selectedProp() { return selectedProp; }
-
     private float panelX() { return collapsed ? -PANEL_W : 0f; }
 
     private float rowsTop() { return TITLE_H + HEADER_H; }
-
-    /** Y of the "PROPS" section header — below the title, the TILESETS header and every tileset row. */
-    private float propsHeaderY() { return rowsTop() + TilePalette.sheetCount() * ROW_H; }
-
-    private float propsTop() { return propsHeaderY() + HEADER_H; }
 
     private void rect(SpriteBatch batch, float x, float y, float w, float h, float r, float g, float b, float a) {
         batch.setColor(r, g, b, a);
@@ -77,13 +69,6 @@ public final class EditorPanel {
                 float ry = rowsTop() + i * ROW_H;
                 if (i == selectedSheet) rect(batch, px, ry, PANEL_W, ROW_H, 0.24f, 0.40f, 0.26f, 1f);
                 text(batch, TilePalette.sheet(i).name, px + PAD, ry + 7f, 0.9f, 0.92f, 0.9f);
-            }
-            rect(batch, px, propsHeaderY(), PANEL_W, HEADER_H, 0.17f, 0.18f, 0.23f, 1f);
-            text(batch, "PROPS", px + PAD, propsHeaderY() + 8f, 0.7f, 0.8f, 0.95f);
-            for (int i = 0; i < PropCatalog.count(); i++) {
-                float ry = propsTop() + i * ROW_H;
-                if (i == selectedProp) rect(batch, px, ry, PANEL_W, ROW_H, 0.40f, 0.34f, 0.22f, 1f);
-                text(batch, PropCatalog.get(i).name, px + PAD, ry + 7f, 0.9f, 0.92f, 0.9f);
             }
             // footer hint
             text(batch, "WASD PAN  - = ZOOM", px + PAD, screenH - 50f, 0.6f, 0.62f, 0.66f);
@@ -122,16 +107,7 @@ public final class EditorPanel {
             float ry = rowsTop() + i * ROW_H;
             if (within(x, y, px, ry, PANEL_W, ROW_H)) {
                 selectedSheet = i;
-                selectedProp = -1;
                 return Hit.SHEET;
-            }
-        }
-        for (int i = 0; i < PropCatalog.count(); i++) {
-            float ry = propsTop() + i * ROW_H;
-            if (within(x, y, px, ry, PANEL_W, ROW_H)) {
-                selectedProp = i;
-                selectedSheet = -1;
-                return Hit.PROP;
             }
         }
         return Hit.PANEL; // clicked the panel chrome (title/header/footer) — consume, no-op

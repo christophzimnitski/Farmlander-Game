@@ -61,11 +61,18 @@ public final class TilePalette {
             new Sheet("tilesets/tallgrass.png",    "Tall grass",   3, 6, true),
             new Sheet("tilesets/wheat.png",        "Wheat",        3, 6, true),
             new Sheet("tilesets/youngwheat.png",   "Young wheat",  3, 6, true),
+            new Sheet("tilesets/farming_fishing.png", "Props",     20, 20, false),
     };
 
     public static int sheetCount() { return SHEETS.length; }
 
     public static Sheet sheet(int sheetIndex) { return SHEETS[sheetIndex]; }
+
+    /** Index of the sheet with the given classpath path, or -1 if not catalogued. */
+    public static int indexOf(String path) {
+        for (int i = 0; i < SHEETS.length; i++) if (SHEETS[i].path.equals(path)) return i;
+        return -1;
+    }
 
     /** Pack a (sheet, in-sheet tile) pair into a stable non-zero global id. */
     public static int pack(int sheetIndex, int tileIndex) {

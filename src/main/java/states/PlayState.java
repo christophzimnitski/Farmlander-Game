@@ -50,8 +50,10 @@ import world.DualGridSoil;
 import world.ObjectLayer;
 import world.PlacedObject;
 import world.layer.CornerAutotileLayer;
+import world.layer.FenceLayer;
 import world.layer.LayerStack;
 import world.layer.MapLayer;
+import world.layer.PlainTileLayer;
 
 import static entities.PlayerAnimations.playerAnimationArrays;
 
@@ -261,8 +263,14 @@ public class PlayState extends GameState {
         LayerStack stack = new LayerStack();
         TextureRegion[] sand = TextureSlicer.slice(loadTexture("tilesets/sand.png"), 6, 3);
         TextureRegion[] sandWater = TextureSlicer.slice(loadTexture("tilesets/sandwater.png"), 6, 3);
+        TextureRegion[] fence = TextureSlicer.slice(loadTexture("tilesets/fence.png"), 6, 3);
+        TextureRegion[] props = TextureSlicer.slice(loadTexture("tilesets/farming_fishing.png"), 20, 20);
         stack.add(new CornerAutotileLayer("Sand", new ChunkedTileLayer(cols, rows, Config.TILE), sand, -1));
         stack.add(new CornerAutotileLayer("Sand water", new ChunkedTileLayer(cols, rows, Config.TILE), sandWater, -1));
+        stack.add(new FenceLayer("Fence", new ChunkedTileLayer(cols, rows, Config.TILE), fence,
+                TilePalette.indexOf("tilesets/fence.png")));
+        stack.add(new PlainTileLayer("Props", new ChunkedTileLayer(cols, rows, Config.TILE), props,
+                false, true, TilePalette.indexOf("tilesets/farming_fishing.png"))); // upright, non-solid
         return stack;
     }
 
