@@ -204,6 +204,10 @@ public final class EditorState extends GameState {
                 activateLayer("Fence");
                 layerBrush = (tile >= 16 && tile <= 18) ? tile : 0; // a gate, else auto-orient
             }
+            case "tilesets/fence_alt.png" -> {
+                activateLayer("Fence alt");
+                layerBrush = (tile >= 16 && tile <= 18) ? tile : 0;
+            }
             case "tilesets/farming_fishing.png" -> {
                 activateLayer("Props");
                 layerBrush = tile;
