@@ -14,12 +14,14 @@ import java.util.Map;
 
 /**
  * The modal tile-picker popup: opened from the side panel with a tileset, it shows that whole sheet enlarged
- * with a grid overlay so you can click an individual tile to set the paint brush. Returns the chosen tile as
- * a {@link TilePalette} global id.
+ * with a grid overlay so you can pick tiles to set the paint brush. A single click selects one tile; pressing
+ * and dragging selects a whole rectangle of tiles that the caller can stamp as a block. Returns the chosen
+ * cells as a {@link Selection} of {@link TilePalette} global ids.
  *
- * <p>While open it's modal — every click is consumed (a click on a tile picks it and closes; a click outside
- * the grid just closes). Drawn in the Y-down HUD space with the shared {@link PixelFont} and white pixel
- * (owned by {@code EditorState}); the only thing it caches is one full-sheet {@link TextureRegion} per sheet.
+ * <p>While open it's modal — the whole press/drag/release is consumed by the popup (it closes on release; a
+ * press that began outside the grid is a cancel). Drawn in the Y-down HUD space with the shared
+ * {@link PixelFont} and white pixel (owned by {@code EditorState}); the only thing it caches is one full-sheet
+ * {@link TextureRegion} per sheet.
  */
 public final class SheetPicker {
     private static final float MAX_W_FRAC = 0.6f, MAX_H_FRAC = 0.66f, MAX_CELL = 64f;
@@ -32,6 +34,20 @@ public final class SheetPicker {
 
     private boolean open = false;
     private int sheetIndex = -1;
+    private boolean dragging = false;
+    private int dragStartCell = -1, dragEndCell = -1; // cell indices spanning the in-progress drag rectangle
+
+    /** A rectangular block of tiles chosen in the picker. {@code ids} are {@link TilePalette} global ids in
+     *  row-major order ({@code cols}×{@code rows}); a single click yields a 1×1 selection. */
+    public static final class Selection {
+        public final int sheetIndex, cols, rows;
+        public final int[] ids;
+        Selection(int sheetIndex, int cols, int rows, int[] ids) {
+            this.sheetIndex = sheetIndex; this.cols = cols; this.rows = rows; this.ids = ids;
+        }
+        public int topLeftId() { return ids[0]; }
+        public boolean isSingle() { return cols == 1 && rows == 1; }
+    }
 
     public SheetPicker(Assets assets, PixelFont font, TextureRegion whiteRegion) {
         this.assets = assets;
@@ -102,14 +118,26 @@ public final class SheetPicker {
         if (TilePalette.isValid(currentBrushId) && TilePalette.sheetIndexOf(currentBrushId) == sheetIndex) {
             markCell(batch, b, TilePalette.tileIndexOf(currentBrushId), 0.3f, 0.9f, 0.4f, 0.5f);
         }
-        int hover = cellAt(b, Gdx.input.getX(), Gdx.input.getY());
-        if (hover >= 0) markCell(batch, b, hover, 1f, 1f, 1f, 0.35f);
+        if (dragging && dragStartCell >= 0) {
+            markRect(batch, b, dragStartCell, dragEndCell, 0.3f, 0.9f, 0.4f, 0.45f); // the drag selection
+        } else {
+            int hover = cellAt(b, Gdx.input.getX(), Gdx.input.getY());
+            if (hover >= 0) markCell(batch, b, hover, 1f, 1f, 1f, 0.35f);
+        }
         batch.end();
     }
 
     private void markCell(SpriteBatch batch, Box b, int tileIndex, float r, float g, float bl, float a) {
         int col = tileIndex % b.cols, row = tileIndex / b.cols;
         rect(batch, b.x + col * b.cell, b.y + row * b.cell, b.cell, b.cell, r, g, bl, a);
+    }
+
+    /** Highlight the rectangle spanning two cell indices (the live drag selection). */
+    private void markRect(SpriteBatch batch, Box b, int startCell, int endCell, float r, float g, float bl, float a) {
+        int c0 = startCell % b.cols, r0 = startCell / b.cols;
+        int c1 = endCell % b.cols, r1 = endCell / b.cols;
+        int lc = Math.min(c0, c1), rc = Math.max(c0, c1), tr = Math.min(r0, r1), br = Math.max(r0, r1);
+        rect(batch, b.x + lc * b.cell, b.y + tr * b.cell, (rc - lc + 1) * b.cell, (br - tr + 1) * b.cell, r, g, bl, a);
     }
 
     private int cellAt(Box b, float x, float y) {
@@ -119,17 +147,58 @@ public final class SheetPicker {
         return row * b.cols + col;
     }
 
-    /**
-     * Handle a click while open (modal): a click on a tile picks it (returns its global id and closes); a
-     * click anywhere else closes the popup (returns {@link TilePalette#EMPTY}). Caller should treat the popup
-     * as consuming all clicks while {@link #isOpen()}.
-     */
-    public int handleClick(float x, float y, float screenW, float screenH) {
-        if (!open) return TilePalette.EMPTY;
+    /** Like {@link #cellAt} but clamps the point into the grid, so dragging past an edge still extends the
+     *  selection to the nearest cell instead of dropping out. */
+    private int clampedCell(Box b, float x, float y) {
+        int col = (int) Math.floor((x - b.x) / b.cell), row = (int) Math.floor((y - b.y) / b.cell);
+        col = Math.max(0, Math.min(b.cols - 1, col));
+        row = Math.max(0, Math.min(b.rows - 1, row));
+        return row * b.cols + col;
+    }
+
+    public boolean isDragging() { return dragging; }
+
+    /** Begin a drag-select on left-press while open: pressing on a cell starts a selection rectangle; pressing
+     *  outside the grid arms a cancel (release then closes with no selection). */
+    public void onPress(float x, float y, float screenW, float screenH) {
+        if (!open) return;
         Box b = box(screenW, screenH);
-        int cell = cellAt(b, x, y);
+        dragStartCell = cellAt(b, x, y); // -1 when the press is outside the grid
+        dragEndCell = dragStartCell;
+        dragging = true;
+    }
+
+    /** Extend the in-progress selection to the cell under the cursor (clamped into the grid). No-op until a
+     *  drag that began on a real cell is in progress. */
+    public void onDrag(float x, float y, float screenW, float screenH) {
+        if (!open || !dragging || dragStartCell < 0) return;
+        dragEndCell = clampedCell(box(screenW, screenH), x, y);
+    }
+
+    /** Finish the drag: close the popup and return the selected rectangle, or null when the press began outside
+     *  the grid (a cancel) or no drag was in progress. The whole press/drag/release is modal — the caller
+     *  should route input here for every frame the picker {@link #isOpen()}. */
+    public Selection onRelease() {
+        boolean was = dragging;
+        int start = dragStartCell, end = dragEndCell;
+        dragging = false;
+        dragStartCell = dragEndCell = -1;
         open = false;
-        if (cell < 0) return TilePalette.EMPTY;
-        return TilePalette.pack(sheetIndex, cell);
+        if (!was || start < 0) return null;
+        return selection(sheetIndex, start, end);
+    }
+
+    /** Build the rectangular selection spanning two cell indices within a sheet (inclusive, direction-agnostic).
+     *  Pure id math — no GL — so it's unit-testable. */
+    public static Selection selection(int sheetIndex, int startCell, int endCell) {
+        int cols = TilePalette.sheet(sheetIndex).cols;
+        int c0 = startCell % cols, r0 = startCell / cols, c1 = endCell % cols, r1 = endCell / cols;
+        int lc = Math.min(c0, c1), rc = Math.max(c0, c1), tr = Math.min(r0, r1), br = Math.max(r0, r1);
+        int w = rc - lc + 1, h = br - tr + 1;
+        int[] ids = new int[w * h];
+        for (int dr = 0; dr < h; dr++)
+            for (int dc = 0; dc < w; dc++)
+                ids[dr * w + dc] = TilePalette.pack(sheetIndex, (tr + dr) * cols + (lc + dc));
+        return new Selection(sheetIndex, w, h, ids);
     }
 }

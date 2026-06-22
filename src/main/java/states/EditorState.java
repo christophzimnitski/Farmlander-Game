@@ -94,6 +94,8 @@ public final class EditorState extends GameState {
     private int bushBase;                              // selected bush type's collision band (0/18/36)
     private int layerBrush = 0;                        // brush for the active stack layer: fence gate id / props tile / 0 = auto
     private int brushTileId = TilePalette.EMPTY;     // the tile the picker last selected (TILE/BUSH preview)
+    private int[] stampIds;                            // non-null = a multi-tile rectangular stamp (packed ids, row-major)
+    private int stampCols, stampRows;                  // its dimensions in cells
     private boolean consumeClick;                      // a UI click (picker/panel) holds the LEFT button down for
                                                        // several frames; suppress map painting until it's released
     private float camX, camY;                         // world-space camera centre
@@ -144,7 +146,7 @@ public final class EditorState extends GameState {
      *  fence/props + any added), and the plain decoration sheets. Rebuilt when a layer is added. */
     private void buildMenu() {
         menu.clear();
-        menu.add(new MenuEntry("Soil", () -> mode = BrushMode.SOIL,
+        menu.add(new MenuEntry("Soil", () -> { mode = BrushMode.SOIL; clearStamp(); },
                 () -> visibility.soil, () -> visibility.soil = !visibility.soil));
         for (MapLayer layer : layerStack.all()) {
             menu.add(new MenuEntry(layer.name(), () -> activateStackLayer(layer),
@@ -181,19 +183,22 @@ public final class EditorState extends GameState {
         int w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
         boolean overUi = picker.isOpen() || panel.contains(mx, my, h);
 
-        if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
-            if (picker.isOpen()) {
-                consumeClick = true; // a click on the modal picker selects a tile; it must not also paint underneath
-                int id = picker.handleClick(mx, my, w, h);
-                if (id != TilePalette.EMPTY) applyPickedTile(id);
-            } else {
-                EditorPanel.Hit hit = panel.handleClick(mx, my, h, menu.size());
-                if (hit.kind != EditorPanel.HitKind.NONE) consumeClick = true; // hit a row/eye/tab, not the map
-                switch (hit.kind) {
-                    case LAYER -> { activeMenuRow = hit.index; pendingLayer = null; menu.get(hit.index).activate.run(); }
-                    case EYE -> menu.get(hit.index).toggleVisible.run();
-                    default -> { } // TAB / PANEL / NONE
-                }
+        if (picker.isOpen()) {
+            // Drag-select in the modal picker: press starts a rectangle, drag grows it, release stamps it. The
+            // popup stays open for the whole press (closing on release), so nothing falls through to the map.
+            if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) picker.onPress(mx, my, w, h);
+            else if (Gdx.input.isButtonPressed(Input.Buttons.LEFT)) picker.onDrag(mx, my, w, h);
+            else if (picker.isDragging()) {
+                SheetPicker.Selection sel = picker.onRelease();
+                if (sel != null) applySelection(sel);
+            }
+        } else if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
+            EditorPanel.Hit hit = panel.handleClick(mx, my, h, menu.size());
+            if (hit.kind != EditorPanel.HitKind.NONE) consumeClick = true; // hit a row/eye/tab, not the map
+            switch (hit.kind) {
+                case LAYER -> { activeMenuRow = hit.index; pendingLayer = null; menu.get(hit.index).activate.run(); }
+                case EYE -> menu.get(hit.index).toggleVisible.run();
+                default -> { } // TAB / PANEL / NONE
             }
         }
         // A UI click keeps LEFT held for several frames; don't start painting until it's released (the picker may
@@ -244,22 +249,52 @@ public final class EditorState extends GameState {
         }
         mode = BrushMode.LAYER;
         layerBrush = 0;
+        clearStamp();
     }
 
-    /** Route a tile picked from the popup. If a stack layer was awaiting one, paint that layer (a fence gate
-     *  16–18 is placed as-is, other fence tiles auto-orient, a props tile stamps). Otherwise stamp the generic
-     *  decoration layer. */
-    private void applyPickedTile(int id) {
-        int tileNum = TilePalette.tileIndexOf(id) + 1; // 1-based tile within the sheet
+    /** Route a rectangle picked from the popup. If a stack layer was awaiting one, paint that layer (a fence gate
+     *  16–18 is placed as-is, other fence tiles auto-orient — both single-cell; a plain props layer accepts a
+     *  multi-tile stamp). Otherwise it's the generic decoration layer, which also accepts a stamp. A 1×1 pick
+     *  stays a single-tile brush; a larger rectangle becomes a {@link #stampIds stamp}. */
+    private void applySelection(SheetPicker.Selection sel) {
+        int firstId = sel.topLeftId();
+        int tileNum = TilePalette.tileIndexOf(firstId) + 1; // 1-based tile within the sheet
         if (pendingLayer != null) {
             MapLayer l = pendingLayer;
             pendingLayer = null;
-            setActiveLayer(l);
-            layerBrush = (l.kind() == MapLayer.Kind.FENCE)
-                    ? ((tileNum >= 16 && tileNum <= 18) ? tileNum : 0) : tileNum;
-        } else {
-            brushTileId = id;
+            setActiveLayer(l); // clears any stamp; mode = LAYER
+            if (l.kind() == MapLayer.Kind.FENCE) {
+                layerBrush = (tileNum >= 16 && tileNum <= 18) ? tileNum : 0; // gate as-is, else auto-orient
+            } else { // PLAIN (props): supports a rectangular stamp
+                layerBrush = tileNum;
+                brushTileId = firstId; // top-left tile drives the swatch/preview
+                if (!sel.isSingle()) setStamp(sel);
+            }
+        } else { // generic decoration tile layer
+            brushTileId = firstId;
             mode = BrushMode.TILE;
+            clearStamp();
+            if (!sel.isSingle()) setStamp(sel);
+        }
+    }
+
+    private void setStamp(SheetPicker.Selection sel) {
+        stampIds = sel.ids; stampCols = sel.cols; stampRows = sel.rows;
+    }
+
+    private void clearStamp() { stampIds = null; stampCols = 0; stampRows = 0; }
+
+    /** Stamp the captured rectangle with its top-left anchored at cell (col,row), into the decoration layer
+     *  ({@code layer == null}) or a plain stack layer. Cells off the world edge are skipped. */
+    private void stampInto(int col, int row, MapLayer layer) {
+        for (int dr = 0; dr < stampRows; dr++) {
+            for (int dc = 0; dc < stampCols; dc++) {
+                int c = col + dc, r = row + dr;
+                if (!decoration.inBounds(c, r)) continue;
+                int id = stampIds[dr * stampCols + dc];
+                if (layer == null) decoration.set(c, r, id);
+                else layer.paint(c, r, TilePalette.tileIndexOf(id) + 1);
+            }
         }
     }
 
@@ -268,6 +303,7 @@ public final class EditorState extends GameState {
         mode = BrushMode.BUSH;
         bushBase = base;
         brushTileId = TilePalette.pack(sheetIndex, 10); // 0-based 10 == tile 11, the clump centre
+        clearStamp();
     }
 
     /** Paint the current brush at the cell under the cursor. */
@@ -276,10 +312,19 @@ public final class EditorState extends GameState {
         int col = decoration.colAtWorldX(wp.x), row = decoration.rowAtWorldY(wp.y);
         if (!decoration.inBounds(col, row)) return;
         switch (mode) {
-            case TILE -> { if (TilePalette.isValid(brushTileId)) decoration.set(col, row, brushTileId); }
+            case TILE -> {
+                if (stampIds != null) stampInto(col, row, null);
+                else if (TilePalette.isValid(brushTileId)) decoration.set(col, row, brushTileId);
+            }
             case SOIL -> soil.till(col, row);
             case BUSH -> bushAutotiler.paint(col, row, bushBase);
-            case LAYER -> { MapLayer l = layerStack.active(); if (l != null) l.paint(col, row, layerBrush); }
+            case LAYER -> {
+                MapLayer l = layerStack.active();
+                if (l != null) {
+                    if (stampIds != null) stampInto(col, row, l);
+                    else l.paint(col, row, layerBrush);
+                }
+            }
             case NONE -> { }
         }
     }
@@ -330,20 +375,38 @@ public final class EditorState extends GameState {
         float wx = col * tile, wy = row * tile;
         batch.setProjectionMatrix(camera.worldCombined());
         batch.begin();
-        TextureRegion preview = previewRegion();
-        if (preview != null) {
+        if (stampIds != null) {
+            // ghost the whole rectangular stamp footprint, anchored top-left at the hovered cell
             batch.setColor(1f, 1f, 1f, 0.5f);
-            batch.draw(preview, wx, wy, tile, tile);
+            for (int dr = 0; dr < stampRows; dr++) {
+                for (int dc = 0; dc < stampCols; dc++) {
+                    TextureRegion reg = palette.region(stampIds[dr * stampCols + dc]);
+                    if (reg != null) batch.draw(reg, (col + dc) * tile, (row + dr) * tile, tile, tile);
+                }
+            }
             batch.setColor(Color.WHITE);
+            outline(batch, wx, wy, stampCols * tile, stampRows * tile);
+        } else {
+            TextureRegion preview = previewRegion();
+            if (preview != null) {
+                batch.setColor(1f, 1f, 1f, 0.5f);
+                batch.draw(preview, wx, wy, tile, tile);
+                batch.setColor(Color.WHITE);
+            }
+            outline(batch, wx, wy, tile, tile);
         }
-        float t = 2f * zoom; // keep the outline visible when zoomed out
-        batch.setColor(1f, 1f, 0.3f, 0.9f);
-        batch.draw(whiteRegion, wx, wy, tile, t);
-        batch.draw(whiteRegion, wx, wy + tile - t, tile, t);
-        batch.draw(whiteRegion, wx, wy, t, tile);
-        batch.draw(whiteRegion, wx + tile - t, wy, t, tile);
-        batch.setColor(Color.WHITE);
         batch.end();
+    }
+
+    /** Draw a yellow rectangle outline (in the active batch) thick enough to stay visible when zoomed out. */
+    private void outline(SpriteBatch batch, float x, float y, float w, float h) {
+        float t = 2f * zoom;
+        batch.setColor(1f, 1f, 0.3f, 0.9f);
+        batch.draw(whiteRegion, x, y, w, t);
+        batch.draw(whiteRegion, x, y + h - t, w, t);
+        batch.draw(whiteRegion, x, y, t, h);
+        batch.draw(whiteRegion, x + w - t, y, t, h);
+        batch.setColor(Color.WHITE);
     }
 
     /** The brush's tile region for the swatch + hover ghost, or null for auto layers (sand) that have no
@@ -369,6 +432,7 @@ public final class EditorState extends GameState {
             label = l != null ? l.name().toUpperCase() : "LAYER";
         }
         else return; // NONE
+        if (stampIds != null) label += " " + stampCols + "X" + stampRows; // e.g. "TILE 3X2"
         TextureRegion r = previewRegion(); // the brush tile (null for soil / sand auto layers)
         float s = 64f, bx = screenW - s - 16f, by = 16f;
         batch.setProjectionMatrix(camera.hudCombined());
