@@ -394,7 +394,7 @@ public class PlayState extends GameState {
         // update is skipped this frame; while the editor is on top, PlayState.update won't run at all.
         if (Config.EDITOR_ENABLED && input.isJustPressed(InputAction.TOGGLE_EDITOR)) {
             stateManager.push(new EditorState(stateManager, worldRenderer, assets, palette,
-                    decorationLayer, soil, collisionLayer, layerStack, layerVisibility, collisionResolver,
+                    grassLayer, decorationLayer, soil, collisionLayer, layerStack, layerVisibility, collisionResolver,
                     player.centerX(), player.centerY()));
             return;
         }

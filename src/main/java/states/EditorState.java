@@ -24,6 +24,7 @@ import render.WorldRenderer;
 import ui.PixelFont;
 import world.BushAutotiler;
 import world.ChunkedTileLayer;
+import world.FenceAutotiler;
 import world.DualGridSoil;
 import world.layer.LayerStack;
 import world.layer.LayerVisibility;
@@ -49,11 +50,16 @@ public final class EditorState extends GameState {
     private static final float ZOOM_RATE = 1.8f;   // multiplicative zoom per second while held
     private static final float SCROLL_STEP = 1.07f; // zoom factor per mouse-wheel notch (~half the prior rate)
     private static final float MIN_ZOOM = 0.5f, MAX_ZOOM = 8f;
+    // The contextual GATE button, sized/placed to sit just under the top-right brush swatch box.
+    private static final float GATE_BTN_W = 76f, GATE_BTN_H = 28f, GATE_BTN_Y = 108f;
+    // The grass-detail sheet (palette sheet 0); the Grass layer picks one of its tiles to paint.
+    private static final int GRASS_SHEET = TilePalette.indexOf("tilesets/grassTileset.png");
 
-    /** What a left-click/drag on the map does. SOIL paints the dual-grid tilled flag (auto-orienting); BUSH
-     *  paints an auto-orienting 9-slice clump into the collision layer; TILE stamps the picked decoration
-     *  tile; LAYER paints the active editor stack layer (sand/sand-water/fence/props); NONE until chosen. */
-    private enum BrushMode { NONE, TILE, SOIL, BUSH, LAYER }
+    /** What a left-click/drag on the map does. GRASS stamps a picked grass-detail tile into the base grass
+     *  background; SOIL paints the dual-grid tilled flag (auto-orienting); BUSH paints an auto-orienting
+     *  9-slice clump into the collision layer; TILE stamps the picked decoration tile; LAYER paints the active
+     *  editor stack layer (sand/sand-water/fence/props); NONE until chosen. */
+    private enum BrushMode { NONE, GRASS, TILE, SOIL, BUSH, LAYER }
 
     /** One row in the Layers panel: a name, what activating it does, and the visibility get/toggle for its eye
      *  (every layer — stack or built-in — has one). */
@@ -81,6 +87,7 @@ public final class EditorState extends GameState {
     // Editable world references (shared with PlayState).
     private final Assets assets;
     private final TilePalette palette;
+    private final ChunkedTileLayer grass;       // base grass background; the Grass layer stamps detail tiles into it
     private final ChunkedTileLayer decoration;
     private final DualGridSoil soil;
     private final ChunkedTileLayer collision;
@@ -92,13 +99,15 @@ public final class EditorState extends GameState {
     private final List<MenuEntry> menu = new ArrayList<>();
     private int activeMenuRow = -1;
     private MapLayer pendingLayer;                     // stack layer awaiting a tile from the picker
+    private boolean pendingGrass;                       // the Grass layer is awaiting a detail tile from the picker
 
     private final float tile;                          // world units per cell (== Config.TILE)
     private final BushAutotiler bushAutotiler;         // 9-slice bush painting into the collision layer
     private BrushMode mode = BrushMode.NONE;
     private int bushBase;                              // selected bush type's collision band (0/18/36)
     private int layerBrush = 0;                        // brush for the active stack layer: fence gate id / props tile / 0 = auto
-    private int brushTileId = TilePalette.EMPTY;     // the tile the picker last selected (TILE/BUSH preview)
+    private int grassBrush = 1;                         // grass-detail tile value (1..3) the Grass layer paints
+    private int brushTileId = TilePalette.EMPTY;     // the tile the picker last selected (GRASS/TILE/BUSH preview)
     private int[] stampIds;                            // non-null = a multi-tile rectangular stamp (packed ids, row-major)
     private int stampCols, stampRows;                  // its dimensions in cells
     private boolean consumeClick;                      // a UI click (picker/panel) holds the LEFT button down for
@@ -107,13 +116,14 @@ public final class EditorState extends GameState {
     private float zoom = 2f;                           // start zoomed out a little for an overview
 
     public EditorState(GameStateManager stateManager, WorldRenderer worldRenderer, Assets assets,
-                       TilePalette palette, ChunkedTileLayer decoration, DualGridSoil soil,
+                       TilePalette palette, ChunkedTileLayer grass, ChunkedTileLayer decoration, DualGridSoil soil,
                        ChunkedTileLayer collision, LayerStack layerStack, LayerVisibility visibility,
                        CollisionResolver collisionResolver, float startX, float startY) {
         super(stateManager);
         this.worldRenderer = worldRenderer;
         this.assets = assets;
         this.palette = palette;
+        this.grass = grass;
         this.decoration = decoration;
         this.soil = soil;
         this.collision = collision;
@@ -152,6 +162,10 @@ public final class EditorState extends GameState {
      *  fence/props + any added), and the plain decoration sheets. Rebuilt when a layer is added. */
     private void buildMenu() {
         menu.clear();
+        // The base grass background: selecting it opens the picker to choose one of the grass-detail tiles,
+        // which then paints into the grass layer. Its eye hides/shows the whole grass background.
+        menu.add(new MenuEntry("Grass", this::selectGrass,
+                () -> visibility.grass, () -> visibility.grass = !visibility.grass));
         menu.add(new MenuEntry("Soil", () -> { mode = BrushMode.SOIL; clearStamp(); },
                 () -> visibility.soil, () -> visibility.soil = !visibility.soil));
         for (MapLayer layer : layerStack.all()) {
@@ -165,7 +179,6 @@ public final class EditorState extends GameState {
         menu.add(new MenuEntry("Young wheat", () -> selectBush(bushSheet("youngwheat"), 2 * BushAutotiler.SPAN), bushesVisible, toggleBushes));
         BooleanSupplier decoVisible = () -> visibility.decoration;
         Runnable toggleDeco = () -> visibility.decoration = !visibility.decoration;
-        menu.add(new MenuEntry("Grass detail", () -> picker.open(TilePalette.indexOf("tilesets/grassTileset.png")), decoVisible, toggleDeco));
         menu.add(new MenuEntry("Rocks & ore", () -> picker.open(TilePalette.indexOf("tilesets/ore.png")), decoVisible, toggleDeco));
         menu.add(new MenuEntry("Reeds", () -> picker.open(TilePalette.indexOf("tilesets/reed.png")), decoVisible, toggleDeco));
     }
@@ -200,12 +213,17 @@ public final class EditorState extends GameState {
                 if (sel != null) applySelection(sel);
             }
         } else if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
-            EditorPanel.Hit hit = panel.handleClick(mx, my, h, menu.size());
-            if (hit.kind != EditorPanel.HitKind.NONE) consumeClick = true; // hit a row/eye/tab, not the map
-            switch (hit.kind) {
-                case LAYER -> { activeMenuRow = hit.index; pendingLayer = null; menu.get(hit.index).activate.run(); }
-                case EYE -> menu.get(hit.index).toggleVisible.run();
-                default -> { } // TAB / PANEL / NONE
+            if (isFenceActive() && gateButtonContains(mx, my, w)) {
+                openGatePicker();
+                consumeClick = true; // a button press, not a map paint stroke
+            } else {
+                EditorPanel.Hit hit = panel.handleClick(mx, my, h, menu.size());
+                if (hit.kind != EditorPanel.HitKind.NONE) consumeClick = true; // hit a row/eye/tab, not the map
+                switch (hit.kind) {
+                    case LAYER -> { activeMenuRow = hit.index; pendingLayer = null; pendingGrass = false; menu.get(hit.index).activate.run(); }
+                    case EYE -> menu.get(hit.index).toggleVisible.run();
+                    default -> { } // TAB / PANEL / NONE
+                }
             }
         }
         // A UI click keeps LEFT held for several frames; don't start painting until it's released (the picker may
@@ -239,10 +257,11 @@ public final class EditorState extends GameState {
         camera.follow(camX, camY);
     }
 
-    /** Activate a stack layer: auto-orienting (corner) layers paint immediately; tile/fence layers open the
-     *  picker to choose a tile (a fence piece auto-orients; a gate is placed as-is). */
+    /** Activate a stack layer: auto-orienting layers (corner soil/sand, fence connections) paint immediately
+     *  on click — a fence starts in auto mode, with a separate GATE button to place gate pieces. Plain (props)
+     *  layers open the picker to choose a tile. */
     private void activateStackLayer(MapLayer layer) {
-        if (layer.kind() == MapLayer.Kind.CORNER) {
+        if (layer.kind() == MapLayer.Kind.CORNER || layer.kind() == MapLayer.Kind.FENCE) {
             setActiveLayer(layer);
         } else {
             pendingLayer = layer;
@@ -259,19 +278,27 @@ public final class EditorState extends GameState {
         clearStamp();
     }
 
-    /** Route a rectangle picked from the popup. If a stack layer was awaiting one, paint that layer (a fence gate
-     *  16–18 is placed as-is, other fence tiles auto-orient — both single-cell; a plain props layer accepts a
-     *  multi-tile stamp). Otherwise it's the generic decoration layer, which also accepts a stamp. A 1×1 pick
-     *  stays a single-tile brush; a larger rectangle becomes a {@link #stampIds stamp}. */
+    /** Route a rectangle picked from the popup to whatever opened it: the Grass layer (a single detail tile for
+     *  the grass background), a fence layer via the GATE button (a gate 16–18 placed as-is, else back to
+     *  auto-orient), a plain props layer (its picked tile + optional multi-tile stamp), or the generic
+     *  decoration layer. A 1×1 pick stays a single-tile brush; a larger rectangle becomes a {@link #stampIds
+     *  stamp}. */
     private void applySelection(SheetPicker.Selection sel) {
         int firstId = sel.topLeftId();
         int tileNum = TilePalette.tileIndexOf(firstId) + 1; // 1-based tile within the sheet
-        if (pendingLayer != null) {
+        if (pendingGrass) {                  // a grass-detail tile for the base grass background
+            pendingGrass = false;
+            mode = BrushMode.GRASS;
+            grassBrush = tileNum;            // grass value 1..3 == grass-sheet local tile + 1
+            brushTileId = firstId;           // drives the swatch/ghost preview
+            clearStamp();
+        } else if (pendingLayer != null) {
             MapLayer l = pendingLayer;
             pendingLayer = null;
             setActiveLayer(l); // clears any stamp; mode = LAYER
             if (l.kind() == MapLayer.Kind.FENCE) {
-                layerBrush = (tileNum >= 16 && tileNum <= 18) ? tileNum : 0; // gate as-is, else auto-orient
+                // From the GATE button: a gate piece (16–18) is placed as-is, anything else returns to auto-orient.
+                layerBrush = FenceAutotiler.isGate(tileNum) ? tileNum : 0;
             } else { // PLAIN (props): supports a rectangular stamp
                 layerBrush = tileNum;
                 brushTileId = firstId; // top-left tile drives the swatch/preview
@@ -305,6 +332,14 @@ public final class EditorState extends GameState {
         }
     }
 
+    /** Choose a grass-detail tile for the base grass background: open the picker on the grass sheet. The picked
+     *  tile becomes the {@link #grassBrush} that {@link #paintAt} stamps into the grass layer. */
+    private void selectGrass() {
+        pendingGrass = true;
+        pendingLayer = null;
+        picker.open(GRASS_SHEET);
+    }
+
     /** Switch to the bush brush for a sheet, previewing its centre tile (1-based index 11) in the swatch/ghost. */
     private void selectBush(int sheetIndex, int base) {
         mode = BrushMode.BUSH;
@@ -319,6 +354,7 @@ public final class EditorState extends GameState {
         int col = decoration.colAtWorldX(wp.x), row = decoration.rowAtWorldY(wp.y);
         if (!decoration.inBounds(col, row)) return;
         switch (mode) {
+            case GRASS -> grass.set(col, row, grassBrush); // stamp a detail tile (1..3) into the grass background
             case TILE -> {
                 if (stampIds != null) stampInto(col, row, null);
                 else if (TilePalette.isValid(brushTileId)) decoration.set(col, row, brushTileId);
@@ -343,6 +379,7 @@ public final class EditorState extends GameState {
         int col = decoration.colAtWorldX(wp.x), row = decoration.rowAtWorldY(wp.y);
         if (!decoration.inBounds(col, row)) return;
         switch (mode) {
+            case GRASS -> grass.set(col, row, 0); // clear the grass-detail tile back to plain base
             case TILE -> decoration.set(col, row, TilePalette.EMPTY);
             case SOIL -> soil.clear(col, row);
             case BUSH -> bushAutotiler.erase(col, row);
@@ -360,6 +397,7 @@ public final class EditorState extends GameState {
         if (!picker.isOpen()) renderHover(batch, h);
         renderPanel(batch, w, h);
         if (!picker.isOpen()) renderBrushSwatch(batch, w);
+        if (!picker.isOpen() && isFenceActive()) renderGateButton(batch, w);
         picker.render(batch, camera.hudCombined(), w, h, brushTileId);
     }
 
@@ -421,7 +459,7 @@ public final class EditorState extends GameState {
     /** The brush's tile region for the swatch + hover ghost, or null for auto layers (sand) that have no
      *  single tile. */
     private TextureRegion previewRegion() {
-        if (mode == BrushMode.TILE || mode == BrushMode.BUSH) return palette.region(brushTileId);
+        if (mode == BrushMode.TILE || mode == BrushMode.BUSH || mode == BrushMode.GRASS) return palette.region(brushTileId);
         if (mode == BrushMode.LAYER) {
             MapLayer l = layerStack.active();
             if (l != null && l.sheetIndex() >= 0 && layerBrush > 0)
@@ -433,7 +471,8 @@ public final class EditorState extends GameState {
     /** A small swatch in the top-right showing the current paint brush, so it's clear what a click places. */
     private void renderBrushSwatch(SpriteBatch batch, float screenW) {
         String label;
-        if (mode == BrushMode.TILE) label = "TILE";
+        if (mode == BrushMode.GRASS) label = "GRASS";
+        else if (mode == BrushMode.TILE) label = "TILE";
         else if (mode == BrushMode.BUSH) label = "BUSH";
         else if (mode == BrushMode.SOIL) label = "SOIL";
         else if (mode == BrushMode.LAYER) {
@@ -451,6 +490,47 @@ public final class EditorState extends GameState {
         batch.setColor(Color.WHITE);
         if (r != null) batch.draw(r, bx, by, s, s);
         font.draw(batch, label, bx + 2f, by + s + 4f, 12f, 12f, 11f);
+        batch.end();
+    }
+
+    /** Is the active brush an editor fence layer? Fences are the only layer with gate pieces, so the GATE
+     *  button is shown (and hit-tested) only for them. */
+    private boolean isFenceActive() {
+        MapLayer l = layerStack.active();
+        return mode == BrushMode.LAYER && l != null && l.kind() == MapLayer.Kind.FENCE;
+    }
+
+    private static float gateBtnX(float screenW) { return screenW - 86f; } // aligns with the swatch box's left
+
+    private boolean gateButtonContains(int x, int y, float screenW) {
+        float bx = gateBtnX(screenW);
+        return x >= bx && x < bx + GATE_BTN_W && y >= GATE_BTN_Y && y < GATE_BTN_Y + GATE_BTN_H;
+    }
+
+    /** Open the tile picker on the active fence layer's sheet so a gate piece (16–18) can be chosen. Picking a
+     *  connective tile (1–15) instead returns the brush to auto-orient. */
+    private void openGatePicker() {
+        MapLayer l = layerStack.active();
+        if (l == null) return;
+        pendingLayer = l;
+        pendingGrass = false;
+        picker.open(l.sheetIndex());
+    }
+
+    /** A prominent button under the brush swatch (fence layers only) that opens the picker to choose a gate.
+     *  Blue ("+ GATE") while painting auto-orienting fence; green ("GATE n") while a gate is the active brush
+     *  (the swatch above previews the actual tile a click will place). */
+    private void renderGateButton(SpriteBatch batch, float screenW) {
+        boolean gateOn = FenceAutotiler.isGate(layerBrush);
+        float bx = gateBtnX(screenW);
+        batch.setProjectionMatrix(camera.hudCombined());
+        batch.begin();
+        if (gateOn) batch.setColor(0.26f, 0.55f, 0.30f, 0.98f); // green: a gate is selected
+        else batch.setColor(0.22f, 0.45f, 0.72f, 0.98f);        // blue: click to pick a gate
+        batch.draw(whiteRegion, bx, GATE_BTN_Y, GATE_BTN_W, GATE_BTN_H);
+        batch.setColor(Color.WHITE);
+        String label = gateOn ? ("GATE " + layerBrush) : "+ GATE";
+        font.draw(batch, label, bx + 8f, GATE_BTN_Y + 10f, 12f, 12f, 11f);
         batch.end();
     }
 

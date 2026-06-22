@@ -87,7 +87,7 @@ public final class WorldRenderer {
         float feetY = player.feetY();
         batch.setProjectionMatrix(camera.worldCombined());
         batch.begin();
-        drawArray(batch, grass, grassRegions, view);
+        if (visibility.grass) drawArray(batch, grass, grassRegions, view);
         if (visibility.soil) { drawSoil(batch, view); drawWateredBlobs(batch, view); }
         if (visibility.decoration) drawDecoration(batch, view); // editor-placed tiles, flat above the ground
         layerStack.drawGround(batch, view, tile); // editor ground layers (sand / sand-water)
@@ -115,7 +115,7 @@ public final class WorldRenderer {
         float feetY = Float.MAX_VALUE; // no player: feetY >= threshold is always true, so one "behind" pass draws all
         batch.setProjectionMatrix(camera.worldCombined());
         batch.begin();
-        drawArray(batch, grass, grassRegions, view);
+        if (visibility.grass) drawArray(batch, grass, grassRegions, view);
         if (visibility.soil) { drawSoil(batch, view); drawWateredBlobs(batch, view); }
         if (visibility.decoration) drawDecoration(batch, view);
         layerStack.drawGround(batch, view, tile);
