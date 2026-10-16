@@ -34,3 +34,6 @@ objects.dat
 
 # macOS
 .DS_Store
+
+# AI assistant settings
+.claude/
