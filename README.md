@@ -73,15 +73,18 @@ and input. They run automatically on every push.
 
 ## Art credits
 
-The character sprites and food icons come from the Liberated Pixel Cup (LPC)
-collection on OpenGameArt and are used under their original licenses
-(CC-BY-SA 3.0, GPL 3.0, OGA-BY 3.0, CC-BY 3.0, and CC0).
+All art comes from the Liberated Pixel Cup (LPC) collection on
+[OpenGameArt](https://opengameart.org) and is used under its original
+licenses (CC-BY-SA 3.0, GPL 3.0, OGA-BY 3.0, CC-BY 3.0, and CC0). This includes
+the character sprites, food icons, tilesets, UI elements, and tool icons.
 
 - Character sprites: many LPC artists. Every file, author, and license is listed
   in [`all-credits.csv`](src/main/resources/credits/all-credits.csv).
 - Food icons: "[LPC] Foods" by bluecarrot16, Daniel Eddeland, Joshua Taylor,
   Richard Kettering, thekingphoenix, RedVoxel, and Molly "Cougarmint" Willits.
   See [`CREDITS-food.txt`](src/main/resources/credits/CREDITS-food.txt).
+- Farming tilesets and UI: based on "[LPC] Farming tilesets, magic animations
+  and UI elements" by Daniel Eddeland and other LPC tilesets.
 
 These art files are not covered by the MIT license below.
 
